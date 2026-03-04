@@ -1,0 +1,35 @@
+Protocol: PhotoAuthorization_v1
+
+# Week 2 - First attempt (intentionally simple)
+# Scenario: A wants P to access photos from B via IdP authorization
+
+Types:
+  Agent A, B, P, IdP;
+  Number Na;
+  Function pk, photos;
+
+Knowledge:
+  A: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(A)), photos(A);
+  B: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(B)), photos(A);
+  P: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(P));
+  IdP: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(IdP));
+
+Actions:
+  # A requests authorization from IdP for P to access B
+  A -> IdP: A, P, B
+  
+  # IdP creates signed token granting P access to A's photos at B
+  IdP -> A: {A, P, B}(inv(pk(IdP)))
+  
+  # A forwards token to P
+  A -> P: {A, P, B}(inv(pk(IdP)))
+  
+  # P presents token to B to get photos
+  P -> B: {A, P, B}(inv(pk(IdP)))
+  
+  # B sends photos to P
+  B -> P: {photos(A)}(pk(P))
+
+Goals:
+  B authenticates IdP on A, P, B
+  photos(A) secret between A, B, P
