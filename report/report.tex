@@ -1,0 +1,219 @@
+% report/report.tex
+\documentclass[11pt,a4paper]{article}
+
+% --------- Packages ---------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+% --------- Listings (AnB / OFMC outputs) ---------
+\lstdefinestyle{anb}{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+\lstdefinestyle{terminal}{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+% --------- Simple helper command ---------
+\newcommand{\sectionauthor}[1]{\noindent\textbf{Section author: #1}\par\medskip}
+
+% --------- Title info ---------
+\title{Open Authorization: Protocol Design and Formal Analysis with OFMC}
+\author{
+  Hjörleifur E. Hjörleifsson \and Collaborator Name
+}
+\date{Hand-in: Mar 16, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We design and incrementally refine an open authorization protocol in which a user A delegates
+read-only access to a photo resource at server B to a photo book service P, using an honest identity
+provider IdP. The protocol is specified in AnB and analyzed using OFMC under the Dolev--Yao attacker
+model. This report documents the development process, discovered attacks, design iterations, and the
+final protocol, including weekly special tasks.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ------------------------------------------------
+\section{Group Setup and Section Ownership}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Group members:} Hjörleifur E. Hjörleifsson, Collaborator Name
+  \item \textbf{Repository:} (link / GitHub repo name)
+  \item \textbf{Submitted artifacts:} This report (PDF), AnB files, and the lab logbook.
+\end{itemize}
+
+\noindent\textbf{Section ownership requirement (DTU):} Each section in this report lists exactly one
+author. Any section without a single designated author may be counted as not submitted.
+
+% ------------------------------------------------
+\section{Resources Used}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\begin{itemize}[leftmargin=*]
+  \item Course slides and lecture notes (weeks 2--7).
+  \item OFMC / AnB documentation and examples from the course material.
+  \item Web resources: (add links you used).
+  \item AI tools: (e.g., ChatGPT used for drafting text structure / checking clarity / formatting).
+  \item Discussions: (teacher/TA discussions, group discussions, other students if any).
+\end{itemize}
+
+% ------------------------------------------------
+\section{Scenario and Security Goals}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Scenario}
+A stores holiday photos at server B. A wants to create a photo book using service P and wishes to
+authorize P to access a subset of A's photos at B without downloading and re-uploading them.
+A authenticates using an identity provider IdP via a shared password. The password is considered
+guessable and must not be used as an encryption key. All parties except A have public/private keys.
+All parties know IdP's public key, and IdP knows all public keys. IdP is assumed honest and trusted.
+
+\subsection{Security and Functional Goals}
+We target the following goals (informal):
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Authorization scope:} P should only obtain read access to A's photos (ideally a folder).
+  \item \textbf{No password leakage:} A's password must not be revealed to P, B, or the network.
+  \item \textbf{Authentication:} B should only release photos if the request is authorized by A via IdP.
+  \item \textbf{Confidentiality:} The intruder should not learn photo contents or sensitive tokens.
+  \item \textbf{Replay resistance:} Authorization tokens should not be re-usable out of context.
+\end{itemize}
+
+% ------------------------------------------------
+\section{Week 2: Informal Design and Static Dolev--Yao Analysis}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Informal Outline}
+Describe the first ``bare-bones'' protocol idea in natural language / message sequence form.
+
+\subsection{First AnB Model (Simplified)}
+Mention simplifications (e.g., assume A also has keys, or public keys are known, etc.).
+Include short snippet:
+
+\begin{lstlisting}[style=anb,caption={Week 2 snapshot excerpt (placeholder)}]
+% Insert a small excerpt, not necessarily full file
+\end{lstlisting}
+
+\subsection{Special Task: Static Analysis (Passive Intruder)}
+Assume the intruder only eavesdrops (does not send messages). State what the intruder can derive
+under the Dolev--Yao model (e.g., learns identities, nonces if sent in clear, tokens if unencrypted).
+Explain your reasoning briefly.
+
+% ------------------------------------------------
+\section{Week 3: Identity Provider and Lazy Intruder Executability}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Protocol Refinement}
+Explain how IdP is introduced and how A authenticates without using password as crypto key.
+
+\subsection{Special Task: Lazy Intruder Method (P Executable by Intruder)}
+Provide the exact step sequence following the lecture method to show the intruder can play role P
+(executability), i.e., each outgoing message is constructible from previous knowledge and inputs.
+
+% ------------------------------------------------
+\section{Week 4: Typing, Formats, and Public-Key Lookup}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Type-Flaw Resistance via Formats}
+Explain how concatenations are replaced with typed formats and why.
+
+\subsection{Public-Key Lookup Subprotocol}
+Describe separate protocol: A asks IdP for another party's public key.
+
+\subsection{Special Task: Type-Flaw Resistance Proof Obligation}
+State and verify: for any two non-variable messages in the SMP, if they unify then they have the same type.
+
+% ------------------------------------------------
+\section{Week 5: Channels (TLS-like Pseudonymous Channels)}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Channel Variant}
+Describe the variant where cryptography is replaced as much as possible by pseudonymous channels
+(server-authenticated TLS approximation).
+
+\subsection{Special Task}
+Explain what was replaced, what remains cryptographic, and what changes in the threat model.
+
+% ------------------------------------------------
+\section{Week 6: Privacy and Guessable Password}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Security with Guessable Password}
+Explain how the protocol stays secure even if the password is guessable (does not become a crypto key).
+Mention OFMC goals and results.
+
+\subsection{Special Task}
+State exactly what you verified and what assumptions OFMC uses in this model.
+
+% ------------------------------------------------
+\section{Final Protocol (AnB Specification Summary)}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\subsection{Final Message Flow}
+Give the final protocol message sequence and briefly explain each step.
+
+\subsection{Initial Knowledge and Goals}
+Summarize initial knowledge (who knows which keys) and OFMC goals (secrecy/authentication).
+
+\subsection{Verification Results}
+Summarize OFMC results: SAFE / attacks found and fixed, and any remaining limitations.
+
+% ------------------------------------------------
+\section{Assumptions, Simplifications, and Limitations}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+List what you did not model or simplified:
+\begin{itemize}[leftmargin=*]
+  \item Modeling photos as an abstract secret rather than real data.
+  \item Scope (folder) representation.
+  \item Freshness assumptions for pseudonymous channels, etc.
+  \item Any OFMC limitations encountered (state space, runtime).
+\end{itemize}
+
+% ------------------------------------------------
+\section{Conclusion}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+Briefly restate the final protocol, the main attacks you encountered, and the final security guarantees.
+
+% ------------------------------------------------
+\appendix
+\section{Submission Map (Where to Find Things)}
+\sectionauthor{(Fill in one person responsible for this section)}
+
+\begin{itemize}[leftmargin=*]
+  \item Lab logbook: \texttt{logbook/logbook.md}
+  \item AnB protocol versions: \texttt{anb/week2\_v1.anb}, \texttt{anb/week3\_v1.anb}, ...
+  \item Final AnB files: \texttt{anb/final\_protocol.anb} (add when ready)
+\end{itemize}
+
+\end{document}
