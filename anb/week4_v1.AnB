@@ -1,0 +1,49 @@
+Protocol: PhotoAuthorization_v3
+
+# Week 4 - Type-flaw resistant with formats
+# Changes from Week 3:
+# - Message structures designed for type-flaw resistance
+# - A initially only knows pk(IdP), gets other keys via KeyLookup protocol
+# - Using nested structures and agent identities as implicit formats
+
+Types:
+  Agent A, B, P, IdP;
+  Number Na;
+  Function pk, photos, pwd;
+
+Knowledge:
+  # A: knows pk(IdP) initially, gets pk(B), pk(P) via KeyLookup
+  # For this protocol, assume keys already obtained
+  A: A, B, P, IdP, pk(B), pk(P), pk(IdP), pwd(A), photos(A);
+  # B: has own key pair, knows public keys
+  B: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(B)), photos(A);
+  # P: has own key pair, knows public keys
+  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
+  # IdP: has own key pair, knows all public keys, shares password with A
+  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+
+Actions:
+  # Step 1: A requests authorization from IdP
+  # Format distinguisher: nested (A, (P, (B, pwd(A))))
+  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
+  
+  # Step 2: IdP creates signed authorization token
+  # Format: (IdP, (A, (P, B))) - IdP identity in token proves origin
+  IdP -> A: {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 3: A forwards token to P
+  A -> P: {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 4: P presents token to B, wrapped with P's identity and encrypted
+  # This binds P to the request
+  P -> B: {P, {IdP, A, P, B}(inv(pk(IdP)))}(pk(B))
+  
+  # Step 5: B sends photos to P
+  # Format: (B, photos) to distinguish from other messages
+  B -> P: {B, photos(A)}(pk(P))
+
+Goals:
+  # B should authenticate IdP signed the token
+  B authenticates IdP on IdP, A, P, B
+  # Photos should remain secret
+  photos(A) secret between A, B, P

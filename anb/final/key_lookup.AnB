@@ -1,0 +1,29 @@
+Protocol: KeyLookup
+
+# Week 4 - Key Lookup Protocol
+# A asks IdP for the public key of B (photo server)
+# A only knows pk(IdP) initially
+
+Types:
+  Agent A, B, IdP;
+  Number Na;
+  Function pk, pwd;
+
+Knowledge:
+  # A knows only IdP's public key and her password
+  A: A, B, IdP, pk(IdP), pwd(A);
+  # IdP knows all public keys
+  IdP: A, B, IdP, pk(IdP), pk(B), inv(pk(IdP)), pwd(A);
+
+Actions:
+  # A requests public key of B from IdP
+  # Message format: (A, B, pwd(A)) encrypted to IdP
+  A -> IdP: {A, B, pwd(A)}(pk(IdP))
+  
+  # IdP responds with signed certificate for B's public key
+  # Message format: (B, pk(B)) signed by IdP
+  IdP -> A: {B, pk(B)}(inv(pk(IdP)))
+
+Goals:
+  # A should authenticate IdP provided this key
+  A authenticates IdP on B, pk(B)
