@@ -674,8 +674,99 @@ i -> (B,1): (same)
 
 ---
 
-## Week 6 – Privacy
+## Week 6 – Privacy (Guessable Passwords)
 
-**TODO:**
-- [ ] Verify protocol secure with guessable password
+### Changes from Week 5
+
+1. **Added guessable secret goal** - Password modeled as guessable
+2. **Created insecure variant** - Demonstrates offline guessing attack
+
+---
+
+### What is a Guessable Secret?
+
+A guessable secret is a value (like a password) that:
+- Has low entropy (dictionary word, short, predictable)
+- Can be subject to **offline dictionary attacks**
+
+**Offline attack:** Intruder captures encrypted message containing password, then tries decrypting with guessed passwords until one works.
+
+**OFMC syntax:** `pwd(A) guessable secret between A, IdP`
+
+---
+
+### Main Protocol: week6_v1.AnB
+
+**Protocol (same as Week 5 with guessable password goal):**
+```
+Actions:
+  A *->* IdP: A, P, B, pwd(A)           # Secure channel - no guessing possible
+  IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))
+  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
+  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
+  B *->* P: B, photos(A)
+
+Goals:
+  B authenticates IdP on IdP, A, P, B
+  photos(A) secret between B, P
+  pwd(A) guessable secret between A, IdP   # ← NEW
+```
+
+**OFMC Result:** ATTACK FOUND (signature forgery only)
+- Goal `guesswhat` NOT triggered → **password is safe from guessing**
+- Only the usual signature forgery attack (excluded under honest IdP)
+
+---
+
+### Special Task: Demonstrating Guessing Attack
+
+**Insecure version (week6_insecure.AnB):**
+```
+Actions:
+  # Password sent over regular encryption, not secure channel
+  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))    # ← VULNERABLE
+  ...
+```
+
+**OFMC Result:** ATTACK FOUND (`guesswhat`)
+
+```
+ATTACK TRACE:
+(A,1) -> i: {A,P,B,pwd(A)}_(pk(IdP))
+i can produce secret {A,P,B,guessPW}_(pk(IdP))
+```
+
+**Analysis:**
+1. Intruder intercepts `{A, P, B, pwd(A)}_(pk(IdP))`
+2. Intruder tries guessed passwords: `{A, P, B, guess1}_(pk(IdP))`
+3. When guess matches captured ciphertext → password recovered
+
+---
+
+### Why Secure Channels Prevent Guessing
+
+| Channel | Intruder sees | Guessing possible? |
+|---------|---------------|-------------------|
+| `A -> IdP: {pwd}(pk(IdP))` | Ciphertext | ✓ Yes (offline) |
+| `A *->* IdP: pwd` | Nothing | ✗ No |
+
+**Secure channels** (`*->*`) abstract TLS/authenticated encryption where:
+- Forward secrecy protects against capture
+- No ciphertext available for offline guessing
+
+---
+
+### Week 6 Summary
+
+**Completed:**
+- [x] week6_v1.AnB with guessable password goal
+- [x] week6_insecure.AnB demonstrating guessing attack (Special Task)
+- [x] OFMC verification (secure version protects password)
+
+**Key findings:**
+1. Guessable passwords + encryption = **vulnerable to offline guessing**
+2. Guessable passwords + secure channels = **safe**
+3. Our protocol protects passwords because A→IdP uses `*->*`
+
+**Protocol security:** Under honest IdP assumption, protocol is secure even with guessable passwords.
 - [ ] Special Task: Guessable password verification

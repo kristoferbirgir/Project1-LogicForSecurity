@@ -1,0 +1,32 @@
+Protocol: PhotoAuthorization_v5_insecure
+
+# Week 6 - INSECURE version to demonstrate guessable password attack
+# 
+# This version sends password over INSECURE channel
+# Intruder can capture and perform offline guessing attack
+
+Types:
+  Agent A, B, P, IdP;
+  Function pk, photos, pwd;
+
+Knowledge:
+  A: A, B, P, IdP, pk(IdP), pwd(A);
+  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
+  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
+  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+
+Actions:
+  # INSECURE: Password sent encrypted but intruder can see ciphertext
+  # With guessable password, intruder can try decrypting with guesses
+  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
+  
+  IdP -> A: {IdP, A, P, B}(inv(pk(IdP)))
+  A -> P: {IdP, A, P, B}(inv(pk(IdP)))
+  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
+  B *->* P: B, photos(A)
+
+Goals:
+  B authenticates IdP on IdP, A, P, B
+  photos(A) secret between B, P
+  # This should FAIL - password exposed to offline guessing
+  pwd(A) guessable secret between A, IdP

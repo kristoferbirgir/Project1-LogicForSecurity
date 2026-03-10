@@ -1,0 +1,51 @@
+Protocol: PhotoAuthorization_v5
+
+# Week 6 - Privacy: Guessable Password
+# 
+# A guessable secret can be subject to offline dictionary attacks.
+# The protocol must protect against this by:
+# 1. Never sending password where intruder can verify guesses
+# 2. Using secure channels to protect password transmission
+#
+# In OFMC: declare password as "guessable" to enable offline guessing attacks
+
+Types:
+  Agent A, B, P, IdP;
+  Function pk, photos, pwd;
+
+Knowledge:
+  # A: Only knows password and identities
+  A: A, B, P, IdP, pwd(A);
+  # B: Server with key pair, stores photos
+  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
+  # P: Server with key pair  
+  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
+  # IdP: Server with key pair, knows A's password
+  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+
+Actions:
+  # Step 1: A -> IdP over secure channel (TLS)
+  # Password is sent over *->* channel, so intruder cannot see it
+  # Even with guessing capability, no offline verification possible
+  A *->* IdP: A, P, B, pwd(A)
+  
+  # Step 2: IdP -> A: signed token (no password in token!)
+  # Token does NOT contain password - only authorization info
+  IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 3: A -> P: forward token
+  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 4: P -> B: present token
+  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 5: B -> P: send photos
+  B *->* P: B, photos(A)
+
+Goals:
+  # B authenticates IdP's approval
+  B authenticates IdP on IdP, A, P, B
+  # Photos secret
+  photos(A) secret between B, P
+  # Password should remain secret even though it's guessable
+  pwd(A) guessable secret between A, IdP
