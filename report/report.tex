@@ -7,6 +7,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
 \usepackage{microtype}
+\usepackage{amsmath}
 \usepackage{hyperref}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -77,19 +78,19 @@ author. Any section without a single designated author may be counted as not sub
 
 % ------------------------------------------------
 \section{Resources Used}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Kristófer Birgir Hjörleifsson}
 
 \begin{itemize}[leftmargin=*]
   \item Course slides and lecture notes (weeks 2--7).
   \item OFMC / AnB documentation and examples from the course material.
-  \item Web resources: (add links you used).
-  \item AI tools: (e.g., ChatGPT used for drafting text structure / checking clarity / formatting).
-  \item Discussions: (teacher/TA discussions, group discussions, other students if any).
+  \item AVISPA project documentation for AnB syntax reference.
+  \item AI tools: GitHub Copilot used for protocol development iteration and documentation.
+  \item Group discussions between team members.
 \end{itemize}
 
 % ------------------------------------------------
 \section{Scenario and Security Goals}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Mikael Máni Eyfeld Clarke}
 
 \subsection{Scenario}
 A stores holiday photos at server B. A wants to create a photo book using service P and wishes to
@@ -98,122 +99,343 @@ A authenticates using an identity provider IdP via a shared password. The passwo
 guessable and must not be used as an encryption key. All parties except A have public/private keys.
 All parties know IdP's public key, and IdP knows all public keys. IdP is assumed honest and trusted.
 
-\subsection{Security and Functional Goals}
-We target the following goals (informal):
+\subsection{Agents}
 \begin{itemize}[leftmargin=*]
-  \item \textbf{Authorization scope:} P should only obtain read access to A's photos (ideally a folder).
-  \item \textbf{No password leakage:} A's password must not be revealed to P, B, or the network.
-  \item \textbf{Authentication:} B should only release photos if the request is authorized by A via IdP.
-  \item \textbf{Confidentiality:} The intruder should not learn photo contents or sensitive tokens.
-  \item \textbf{Replay resistance:} Authorization tokens should not be re-usable out of context.
+  \item \textbf{A (User):} Owns photos, authenticates via password, no cryptographic keys.
+  \item \textbf{B (Photo Server):} Stores A's photos, has key pair \texttt{pk(B)/inv(pk(B))}.
+  \item \textbf{P (Printing Service):} Wants to access A's photos, has key pair \texttt{pk(P)/inv(pk(P))}.
+  \item \textbf{IdP (Identity Provider):} Authenticates A, issues authorization tokens, has key pair \texttt{pk(IdP)/inv(pk(IdP))}.
+\end{itemize}
+
+\subsection{Security and Functional Goals}
+We target the following goals:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Authorization:} B should only release photos if authorized by A via IdP.
+  \item \textbf{Password secrecy:} A's password must not be revealed to P, B, or the intruder.
+  \item \textbf{Photo confidentiality:} Photos should remain secret between authorized parties.
+  \item \textbf{Authentication:} B must be able to verify IdP signed the authorization token.
 \end{itemize}
 
 % ------------------------------------------------
 \section{Week 2: Informal Design and Static Dolev--Yao Analysis}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Kristófer Birgir Hjörleifsson}
 
 \subsection{Informal Outline}
-Describe the first ``bare-bones'' protocol idea in natural language / message sequence form.
+The basic protocol flow:
+\begin{enumerate}
+  \item A requests authorization from IdP (encrypted with IdP's public key)
+  \item IdP creates signed token authorizing P to access A's photos at B
+  \item A forwards token to P
+  \item P presents token to B (encrypted with B's public key)
+  \item B verifies token and sends photos to P
+\end{enumerate}
 
 \subsection{First AnB Model (Simplified)}
-Mention simplifications (e.g., assume A also has keys, or public keys are known, etc.).
-Include short snippet:
+Initial simplification: A has a key pair (temporary, removed in Week 3).
 
-\begin{lstlisting}[style=anb,caption={Week 2 snapshot excerpt (placeholder)}]
-% Insert a small excerpt, not necessarily full file
+\begin{lstlisting}[style=anb,caption={Week 2 protocol excerpt}]
+Actions:
+  A -> IdP: {A, P, B}(pk(IdP))
+  IdP -> A: {A, P, B}(inv(pk(IdP)))
+  A -> P: {A, P, B}(inv(pk(IdP)))
+  P -> B: {{A, P, B}(inv(pk(IdP)))}(pk(B))
+  B -> P: {photos(A)}(pk(P))
 \end{lstlisting}
 
+\subsection{OFMC Result}
+OFMC found a \textbf{signature forgery attack}: the intruder creates a token signed with their own key, and B cannot distinguish \texttt{pk(IdP)} from \texttt{pk(i)}.
+
 \subsection{Special Task: Static Analysis (Passive Intruder)}
-Assume the intruder only eavesdrops (does not send messages). State what the intruder can derive
-under the Dolev--Yao model (e.g., learns identities, nonces if sent in clear, tokens if unencrypted).
-Explain your reasoning briefly.
+\textbf{Assumption:} Intruder only eavesdrops (passive), does not inject messages.
+
+\textbf{What intruder observes:}
+\begin{itemize}[leftmargin=*]
+  \item Message 1: \texttt{\{A, P, B\}(pk(IdP))} -- cannot decrypt (no \texttt{inv(pk(IdP))})
+  \item Message 2: \texttt{\{A, P, B\}(inv(pk(IdP)))} -- can verify signature, learns A, P, B
+  \item Message 3: Same signed token -- learns nothing new
+  \item Message 4: \texttt{\{\{token\}\}(pk(B))} -- cannot decrypt outer layer
+  \item Message 5: \texttt{\{photos(A)\}(pk(P))} -- cannot decrypt
+\end{itemize}
+
+\textbf{Intruder's knowledge (passive):} Agent identities A, P, B, IdP (from signed token). \textbf{Cannot learn:} photos, password, or private keys.
+
+\textbf{Conclusion:} Protocol is secure against passive eavesdropping. The signature forgery attack requires active message injection.
 
 % ------------------------------------------------
 \section{Week 3: Identity Provider and Lazy Intruder Executability}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Mikael Máni Eyfeld Clarke}
 
 \subsection{Protocol Refinement}
-Explain how IdP is introduced and how A authenticates without using password as crypto key.
+\textbf{Key change:} A no longer has a key pair. A authenticates to IdP using password.
+
+\begin{lstlisting}[style=anb,caption={Week 3: Password authentication}]
+A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
+\end{lstlisting}
+
+The password is encrypted under IdP's public key, so the intruder cannot learn it. Password is NOT used as an encryption key -- only as a credential.
 
 \subsection{Special Task: Lazy Intruder Method (P Executable by Intruder)}
-Provide the exact step sequence following the lecture method to show the intruder can play role P
-(executability), i.e., each outgoing message is constructible from previous knowledge and inputs.
+We show role P is executable by constructing all outgoing messages from intruder's knowledge.
+
+\textbf{Role P receives and sends:}
+\begin{enumerate}
+  \item Receives: \texttt{token = \{IdP, A, P, B\}(inv(pk(IdP)))}
+  \item Sends: \texttt{\{P, token\}(pk(B))}
+\end{enumerate}
+
+\textbf{Lazy Intruder Analysis:}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Step 1:} Intruder intercepts message 3 (A $\to$ P), learns \texttt{token}
+  \item \textbf{Step 2:} Intruder knows \texttt{P} (public agent name)
+  \item \textbf{Step 3:} Intruder knows \texttt{pk(B)} (public key, in initial knowledge)
+  \item \textbf{Step 4:} Intruder computes \texttt{\{P, token\}(pk(B))} using encryption rule
+\end{itemize}
+
+\textbf{Conclusion:} Role P is executable by the intruder. Every message P sends can be constructed from publicly available information and intercepted messages. This is expected -- P acts as a relay.
 
 % ------------------------------------------------
 \section{Week 4: Typing, Formats, and Public-Key Lookup}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Kristófer Birgir Hjörleifsson}
 
 \subsection{Type-Flaw Resistance via Formats}
-Explain how concatenations are replaced with typed formats and why.
+Type flaws occur when an intruder substitutes a message of one type where another is expected. We prevent this by:
+\begin{itemize}[leftmargin=*]
+  \item Including agent identities in messages as implicit format tags
+  \item Using different tuple structures for different message types
+\end{itemize}
+
+\begin{lstlisting}[style=anb,caption={Message formats}]
+Msg 1: {A, P, B, pwd(A)}(pk(IdP))       % 4-tuple with password
+Msg 2: {IdP, A, P, B}(inv(pk(IdP)))     % 4-tuple, agents only
+Msg 4: {P, {token}(inv(pk(IdP)))}(pk(B)) % Nested structure
+Msg 5: {B, photos(A)}(pk(P))            % 2-tuple
+\end{lstlisting}
 
 \subsection{Public-Key Lookup Subprotocol}
-Describe separate protocol: A asks IdP for another party's public key.
+A separate protocol allows A to obtain public keys from IdP:
 
-\subsection{Special Task: Type-Flaw Resistance Proof Obligation}
-State and verify: for any two non-variable messages in the SMP, if they unify then they have the same type.
+\begin{lstlisting}[style=anb,caption={Key lookup protocol}]
+A -> IdP: {A, B, pwd(A)}(pk(IdP))
+IdP -> A: {B, pk(B)}(inv(pk(IdP)))
+\end{lstlisting}
+
+\subsection{Special Task: Type-Flaw Resistance Proof}
+\textbf{Definition:} Protocol is type-flaw resistant if for any two non-variable messages $M_1$, $M_2$ in SMP, if they have a unifier $\sigma$, then $\text{type}(M_1) = \text{type}(M_2)$.
+
+\textbf{Analysis of message types:}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Message & Structure & Type \\
+\midrule
+Msg 1 & (Agent, Agent, Agent, Function) & AuthRequest \\
+Msg 2 & (Agent, Agent, Agent, Agent) & Token \\
+Msg 4 outer & (Agent, SignedMsg) & PhotoRequest \\
+Msg 5 & (Agent, Function) & PhotoResponse \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Unification check:}
+\begin{itemize}[leftmargin=*]
+  \item Msg 1 vs Msg 2: Different types (\texttt{pwd(A)} $\neq$ Agent) -- no unifier
+  \item Msg 4 vs Msg 5: Different types (SignedMsg $\neq$ Function) -- no unifier
+\end{itemize}
+
+\textbf{Conclusion:} Protocol is type-flaw resistant.
 
 % ------------------------------------------------
 \section{Week 5: Channels (TLS-like Pseudonymous Channels)}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Mikael Máni Eyfeld Clarke}
+
+\subsection{Channel Notation}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Notation & Meaning \\
+\midrule
+\texttt{A -> B: M} & Insecure (Dolev-Yao) \\
+\texttt{A *-> B: M} & Confidential only (TLS, client not auth) \\
+\texttt{A ->* B: M} & Authenticated only (signed) \\
+\texttt{A *->* B: M} & Secure channel (mutual TLS) \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsection{Channel Variant}
-Describe the variant where cryptography is replaced as much as possible by pseudonymous channels
-(server-authenticated TLS approximation).
+\begin{lstlisting}[style=anb,caption={Week 5: TLS channels}]
+A *->* IdP: A, P, B, pwd(A)           % TLS to IdP
+IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))  % Signed token
+A *-> P: {token}(inv(pk(IdP)))        % Forward token
+P *->* B: P, {token}(inv(pk(IdP)))    % Present to B
+B *->* P: B, photos(A)                % Response
+\end{lstlisting}
 
-\subsection{Special Task}
-Explain what was replaced, what remains cryptographic, and what changes in the threat model.
+\subsection{Special Task: What Was Replaced}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Original & Channel Version & Replaced? \\
+\midrule
+\texttt{\{M\}(pk(IdP))} & \texttt{A *-> IdP: M} & Yes \\
+\texttt{\{M\}(pk(B))} & \texttt{P *-> B: M} & Yes \\
+\texttt{\{M\}(pk(P))} & \texttt{B *-> P: M} & Yes \\
+\texttt{\{M\}(inv(pk(IdP)))} & Cannot replace & \textbf{No} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Why signature cannot be replaced:} B needs to verify IdP approved the authorization, but B has no direct TLS channel to IdP. The token travels through A and P, so B must verify the signature cryptographically.
 
 % ------------------------------------------------
 \section{Week 6: Privacy and Guessable Password}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Kristófer Birgir Hjörleifsson}
+
+\subsection{Guessable Secrets}
+A guessable secret (like a password) can be subject to offline dictionary attacks. The intruder captures encrypted data containing the password and tries decrypting with guessed passwords.
 
 \subsection{Security with Guessable Password}
-Explain how the protocol stays secure even if the password is guessable (does not become a crypto key).
-Mention OFMC goals and results.
+Our protocol protects against guessing attacks because:
+\begin{itemize}[leftmargin=*]
+  \item Password is sent over secure channel (\texttt{A *->* IdP})
+  \item Intruder never sees ciphertext containing password
+  \item No offline verification possible
+\end{itemize}
 
-\subsection{Special Task}
-State exactly what you verified and what assumptions OFMC uses in this model.
+\textbf{OFMC Goal:} \texttt{pwd(A) guessable secret between A, IdP}
+
+\textbf{Result:} No guessing attack found (only signature forgery under dishonest IdP).
+
+\subsection{Special Task: Insecure Variant Demonstration}
+We created an insecure variant to demonstrate the attack:
+
+\begin{lstlisting}[style=anb,caption={Insecure version (vulnerable to guessing)}]
+A -> IdP: {A, P, B, pwd(A)}(pk(IdP))   % Regular encryption
+\end{lstlisting}
+
+\textbf{OFMC Result:} \texttt{ATTACK\_FOUND (guesswhat)}
+\begin{lstlisting}[style=terminal,caption={Guessing attack trace}]
+(A,1) -> i: {A,P,B,pwd(A)}_(pk(IdP))
+i can produce secret {A,P,B,guessPW}_(pk(IdP))
+\end{lstlisting}
+
+\textbf{Conclusion:} Encryption alone does not protect guessable secrets. Secure channels (TLS) prevent offline guessing by hiding the ciphertext entirely.
 
 % ------------------------------------------------
 \section{Final Protocol (AnB Specification Summary)}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Mikael Máni Eyfeld Clarke}
 
 \subsection{Final Message Flow}
-Give the final protocol message sequence and briefly explain each step.
+\begin{lstlisting}[style=anb,caption={Final protocol (photo\_auth\_final.AnB)}]
+A *->* IdP: A, P, B, pwd(A)
+IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))
+A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
+P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
+B *->* P: B, photos(A)
+\end{lstlisting}
 
-\subsection{Initial Knowledge and Goals}
-Summarize initial knowledge (who knows which keys) and OFMC goals (secrecy/authentication).
+\textbf{Step-by-step:}
+\begin{enumerate}
+  \item A authenticates to IdP with password over TLS
+  \item IdP creates signed authorization token
+  \item A forwards token to P over confidential channel
+  \item P presents token to B with mutual TLS
+  \item B verifies token signature and sends photos to P
+\end{enumerate}
+
+\subsection{Initial Knowledge}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Agent & Knowledge \\
+\midrule
+A & A, B, P, IdP, pwd(A) \\
+B & A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A) \\
+P & A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P)) \\
+IdP & A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Goals}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{B authenticates IdP on IdP, A, P, B} -- B verifies IdP signed token
+  \item \texttt{photos(A) secret between B, P} -- Photos only known to B and P
+  \item \texttt{pwd(A) guessable secret between A, IdP} -- Password protected
+\end{itemize}
 
 \subsection{Verification Results}
-Summarize OFMC results: SAFE / attacks found and fixed, and any remaining limitations.
+\textbf{OFMC Result:} ATTACK\_FOUND (signature forgery)
+
+The attack involves the intruder acting as IdP, signing a forged token with their own key. This attack is \textbf{excluded by assumption} since IdP is assumed honest.
+
+\textbf{Under honest IdP assumption:} Protocol is secure.
 
 % ------------------------------------------------
 \section{Assumptions, Simplifications, and Limitations}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Kristófer Birgir Hjörleifsson}
 
-List what you did not model or simplified:
+\subsection{Assumptions}
 \begin{itemize}[leftmargin=*]
-  \item Modeling photos as an abstract secret rather than real data.
-  \item Scope (folder) representation.
-  \item Freshness assumptions for pseudonymous channels, etc.
-  \item Any OFMC limitations encountered (state space, runtime).
+  \item \textbf{IdP is honest:} The identity provider never acts maliciously or is compromised. Attacks involving dishonest IdP are excluded.
+  \item \textbf{Secure channels abstract TLS:} We assume TLS provides confidentiality and authentication as modeled.
+  \item \textbf{Keys are pre-distributed:} Servers know each other's public keys.
+\end{itemize}
+
+\subsection{Simplifications}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Photos as abstract secret:} Modeled as \texttt{photos(A)} rather than actual data.
+  \item \textbf{No scope/folder:} Token authorizes access to all photos, not a specific subset.
+  \item \textbf{No timestamps/nonces:} Token has no expiration or freshness mechanism.
+  \item \textbf{Single session:} OFMC verifies bounded number of sessions.
+\end{itemize}
+
+\subsection{Limitations}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Signature forgery persists:} B cannot distinguish pk(IdP) from pk(i) without out-of-band trust establishment.
+  \item \textbf{No revocation:} Once issued, tokens cannot be revoked.
+  \item \textbf{IdP single point of failure:} If IdP is compromised, all security fails.
 \end{itemize}
 
 % ------------------------------------------------
 \section{Conclusion}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Mikael Máni Eyfeld Clarke}
 
-Briefly restate the final protocol, the main attacks you encountered, and the final security guarantees.
+We designed an open authorization protocol allowing user A to authorize printing service P to access photos at server B, using identity provider IdP for authentication.
+
+\textbf{Main attack encountered:} Signature forgery -- the intruder creates tokens signed with their own key. This is a fundamental Dolev-Yao limitation where B cannot distinguish honest from dishonest signers without pre-established trust.
+
+\textbf{Solution:} We assume IdP is honest (as per assignment). Under this assumption, the protocol provides:
+\begin{itemize}[leftmargin=*]
+  \item Authentication of IdP's authorization via signed tokens
+  \item Confidentiality of photos (only B and P)
+  \item Protection of guessable password via secure channels
+\end{itemize}
+
+\textbf{Final protocol uses:} TLS channels for confidentiality, cryptographic signatures for authorization tokens that travel through untrusted intermediaries.
 
 % ------------------------------------------------
 \appendix
 \section{Submission Map (Where to Find Things)}
-\sectionauthor{(Fill in one person responsible for this section)}
+\sectionauthor{Kristófer Birgir Hjörleifsson}
 
 \begin{itemize}[leftmargin=*]
   \item Lab logbook: \texttt{logbook/logbook.md}
-  \item AnB protocol versions: \texttt{anb/week2\_v1.anb}, \texttt{anb/week3\_v1.anb}, ...
-  \item Final AnB files: \texttt{anb/final\_protocol.anb} (add when ready)
+  \item AnB protocol versions:
+    \begin{itemize}
+      \item \texttt{anb/week2\_v1.AnB} -- Basic protocol
+      \item \texttt{anb/week3\_v1.AnB} -- Password authentication
+      \item \texttt{anb/week4\_v1.AnB} -- Type-flaw resistant
+      \item \texttt{anb/week5\_v1.AnB} -- TLS channels
+      \item \texttt{anb/week5\_v1\_tls.AnB} -- Server-side only TLS
+      \item \texttt{anb/week6\_v1.AnB} -- Guessable password
+      \item \texttt{anb/week6\_insecure.AnB} -- Insecure variant (demo)
+    \end{itemize}
+  \item Final AnB files:
+    \begin{itemize}
+      \item \texttt{anb/final/photo\_auth\_final.AnB} -- Final protocol
+      \item \texttt{anb/final/key\_lookup.AnB} -- Key lookup subprotocol
+    \end{itemize}
 \end{itemize}
 
 \end{document}
