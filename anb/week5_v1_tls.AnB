@@ -1,0 +1,56 @@
+Protocol: PhotoAuthorization_v4_TLS
+
+# Week 5 Special Task - TLS with server-side authentication ONLY
+# 
+# Server-side auth TLS means:
+#   - Server is authenticated (has certificate)
+#   - Client is NOT cryptographically authenticated
+#
+# Channel modeling:
+#   Client -> Server:  *->  (confidential only, client not authenticated)
+#   Server -> Client:  ->*  (authenticated from server)
+#
+# Note: Since A has no keys, A cannot create authenticated channels
+# Servers (IdP, B, P) have key pairs for their certificates
+
+Types:
+  Agent A, B, P, IdP;
+  Function pk, photos, pwd;
+
+Knowledge:
+  # A: No keys at all - just knows identities and password
+  A: A, B, P, IdP, pwd(A);
+  # B: Server with certificate (key pair), knows IdP's public key
+  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
+  # P: Server with certificate (key pair)
+  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
+  # IdP: Server with certificate, knows A's password
+  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+
+Actions:
+  # Step 1: A -> IdP over TLS (server-side auth)
+  # Client sends confidentially, server authenticates itself
+  # A's message is confidential (only IdP reads) but A is not authenticated
+  A *-> IdP: A, P, B, pwd(A)
+  
+  # Step 2: IdP -> A over TLS
+  # Server (IdP) sends authenticated response
+  # Token is signed so B can verify later
+  IdP ->* A: {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 3: A -> P over TLS (server-side auth)  
+  # A sends token confidentially to P (P authenticates itself)
+  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 4: P -> B over TLS (mutual TLS between servers)
+  # Both P and B are servers with certificates
+  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
+  
+  # Step 5: B -> P over TLS (mutual TLS between servers)
+  B *->* P: B, photos(A)
+
+Goals:
+  # B authenticates IdP's approval via signed token
+  B authenticates IdP on IdP, A, P, B
+  # Photos secret between B and P
+  photos(A) secret between B, P

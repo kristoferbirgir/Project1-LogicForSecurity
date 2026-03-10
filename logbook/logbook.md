@@ -552,38 +552,125 @@ The different message formats (tuples of different lengths, inclusion of agent i
 
 ---
 
-## Week 5 – Channels
+## Week 5 – Channels (TLS Pseudonymous)
 
-**TODO:**
-- [ ] Replace cryptography with pseudonymous channels (TLS)
-- [ ] Special Task: TLS channel variant
+### Changes from Week 4
 
----
-
-## Week 6 – Privacy
-
-**TODO:**
-- [ ] Verify protocol secure with guessable password
-- [ ] Special Task: Guessable password verification
-- [ ] Implement password-based authentication
-- [ ] Special Task: Lazy intruder execution (show P role is executable)
+1. **Replaced encryption with channels** - Using `*->`, `->*`, `*->*` notation
+2. **A has no keys** - Only needs password, uses TLS for secure communication
+3. **Server-side TLS model** - Servers (IdP, B, P) have certificates
 
 ---
 
-## Week 4 – Typing and Key Lookup
+### Channel Notation Reference
 
-**TODO:**
-- [ ] Use formats for type-flaw resistance
-- [ ] Create separate key lookup protocol
-- [ ] Special Task: Show protocols are type-flaw resistant
+| Notation | Meaning | TLS Equivalent |
+|----------|---------|----------------|
+| `A -> B: M` | Insecure (Dolev-Yao) | No TLS |
+| `A *-> B: M` | Confidential only | TLS, client not auth |
+| `A ->* B: M` | Authenticated only | Signed message |
+| `A *->* B: M` | Secure (both) | Mutual TLS |
 
 ---
 
-## Week 5 – Channels
+### Main Protocol: week5_v1.AnB
 
-**TODO:**
-- [ ] Replace cryptography with pseudonymous channels (TLS)
-- [ ] Special Task: TLS channel variant
+**Protocol with channels:**
+```
+Knowledge:
+  A: A, B, P, IdP, pwd(A);                                    # No keys!
+  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
+  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
+  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+
+Actions:
+  A *->* IdP: A, P, B, pwd(A)                    # TLS to IdP
+  IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))       # Signed token back
+  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))          # Forward token
+  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))      # Present to B
+  B *->* P: B, photos(A)                          # Photos response
+```
+
+**Key insight:** Token still needs IdP's signature for B to verify (can't replace with channels since B has no direct channel to IdP).
+
+---
+
+### Special Task: Server-Side Only TLS (week5_v1_tls.AnB)
+
+**Server-side authenticated TLS means:**
+- Server has certificate (key pair)
+- Client is NOT cryptographically authenticated
+
+**Modeling:**
+```
+# Client -> Server: confidential only (server doesn't know client)
+A *-> IdP: A, P, B, pwd(A)
+
+# Server -> Client: authenticated (server signs response)
+IdP ->* A: {IdP, A, P, B}(inv(pk(IdP)))
+
+# Client -> Server: confidential only
+A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
+
+# Server-to-Server: Mutual TLS (both have certificates)
+P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
+B *->* P: B, photos(A)
+```
+
+---
+
+### OFMC Verification
+
+**Result:** ATTACK FOUND (same signature forgery)
+
+**Attack trace:**
+```
+i -> (P,1): {{i,i,P,B}_inv(pk(i))}_inv(authChCr(i))
+(P,1) -> i: {{P,{token}_inv(pk(i))}_inv(authChCr(P))}_(confChCr(B))
+i -> (B,1): (same)
+(B,1) -> i: {{B,photos(i)}_inv(authChCr(B))}_(confChCr(P))
+```
+
+**Analysis:**
+- Intruder creates forged token signed with own key
+- P accepts it (no way to distinguish pk(IdP) from pk(i))
+- B verifies signature with pk(i) thinking it's pk(IdP)
+
+**Under honest IdP assumption:** Attack excluded - intruder cannot obtain inv(pk(IdP)).
+
+---
+
+### Cryptography Replacement Analysis
+
+| Original | Channel Version | Replaced? |
+|----------|-----------------|-----------|
+| `{M}(pk(IdP))` | `A *-> IdP: M` | ✓ Yes |
+| `{M}(pk(B))` | `P *-> B: M` | ✓ Yes |
+| `{M}(pk(P))` | `B *-> P: M` | ✓ Yes |
+| `{M}(inv(pk(IdP)))` | Cannot replace | ✗ No |
+
+**Token signature cannot be replaced** because:
+1. B needs to verify IdP's approval
+2. B has no direct TLS session with IdP
+3. The token travels through A and P before reaching B
+4. Signature is the only way for B to verify origin
+
+---
+
+### Week 5 Summary
+
+**Completed:**
+- [x] week5_v1.AnB with secure channels
+- [x] week5_v1_tls.AnB with server-side only TLS (Special Task)
+- [x] OFMC verification (signature attack persists)
+- [x] Analysis of what can/cannot be replaced
+
+**Findings:**
+1. Encryption for confidentiality → Replaced by `*->` channels
+2. Encryption for authentication → Replaced by `->*` channels  
+3. Signature on token → **Cannot replace** (needs offline verification)
+
+**Remaining issue:** Signature forgery attack persists because the authorization token must be signed for B to verify without contact to IdP.
 
 ---
 
