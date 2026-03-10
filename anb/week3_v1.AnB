@@ -1,0 +1,49 @@
+Protocol: PhotoAuthorization_v2
+
+# Week 3 - Password-based authentication
+# Changes from Week 2:
+# - A does NOT have a public/private key pair
+# - A authenticates to IdP using password (shared secret)
+# - Password is NOT used as encryption key
+# - A encrypts request to IdP using pk(IdP)
+
+Types:
+  Agent A, B, P, IdP;
+  Number Na;
+  Function pk, photos, pwd;
+
+Knowledge:
+  # A: NO private key, has password with IdP, knows all public keys
+  A: A, B, P, IdP, pk(B), pk(P), pk(IdP), pwd(A), photos(A);
+  # B: has own key pair, knows public keys
+  B: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(B)), photos(A);
+  # P: has own key pair, knows public keys
+  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
+  # IdP: has own key pair, knows all public keys, shares password with A
+  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+
+Actions:
+  # A authenticates to IdP: sends request encrypted with pk(IdP)
+  # Password included for authentication (not as encryption key)
+  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
+  
+  # IdP verifies password, creates signed token for authorization
+  # Token says: "IdP authorizes A to let P access B"
+  IdP -> A: {A, P, B}(inv(pk(IdP)))
+  
+  # A forwards signed token to P
+  A -> P: {A, P, B}(inv(pk(IdP)))
+  
+  # P presents token to B
+  P -> B: {A, P, B}(inv(pk(IdP)))
+  
+  # B verifies IdP signature, sends photos encrypted to P
+  B -> P: {photos(A)}(pk(P))
+
+Goals:
+  # B should authenticate that IdP authorized this
+  B authenticates IdP on A, P, B
+  # Photos should remain secret
+  photos(A) secret between A, B, P
+  # Note: Password secrecy assumes IdP is honest (assignment assumption)
+  # pwd(A) secret between A, IdP  -- removed: IdP honest by assumption
