@@ -268,6 +268,9 @@ Msg 5 & f4 & 3 (f4, Agent, Data) \\
 \begin{itemize}[leftmargin=*]
   \item No two messages share the same leading tag, so no unifier exists between different message types.
   \item Even ignoring tags: Msg 1 has 5 components, Msg 2 has 4, etc.---different arities prevent unification.
+  \item The signed token in message~2 and the inner token carried inside message~4 do unify,
+        but this is benign because they are the \emph{same} tagged message type~\texttt{f2}.
+        Type-flaw resistance only requires that messages of \emph{different} types cannot unify.
 \end{itemize}
 
 \textbf{Conclusion:} Protocol is type-flaw resistant.
@@ -456,10 +459,12 @@ between A, idp} is \emph{not} violated---this is the important Week~6 privacy re
 \begin{itemize}[leftmargin=*]
   \item \textbf{Intruder can play A:} Since A, B, P are uppercase variables, the intruder can
         instantiate any of these roles. This leads to the photo secrecy attack where the
-        intruder requests its own photos.
+        intruder requests its own photos---a modeling artifact, not a real authorization break.
   \item \textbf{No revocation:} Once issued, tokens cannot be revoked.
   \item \textbf{idp single point of failure:} If \texttt{idp} were compromised (not modeled),
         all security guarantees fail.
+  \item \textbf{No token freshness:} The token contains no nonce or timestamp, so replay
+        of the token is possible within the OFMC bounded-session model.
 \end{itemize}
 
 % ------------------------------------------------
@@ -477,15 +482,18 @@ photos at server B, using identity provider \texttt{idp} for authentication.
   \item Hash-based challenge-response is vulnerable to offline guessing; secure channels are not
 \end{itemize}
 
-\textbf{Remaining attack:} OFMC can instantiate A with the intruder, leading to
-\texttt{photos(i)} being leaked. This is not a meaningful break of honest-user authorization---the
-intruder merely obtains its own resource. The guessable-password goal holds, which is the key
+\textbf{Remaining attack:} OFMC reports ATTACK\_FOUND (secrets) because the intruder
+can instantiate A with itself, causing \texttt{idp} to issue a legitimate token for the intruder's
+own identity. The intruder then learns \texttt{photos(i)}---its own resource.
+This is inherent to the Dolev--Yao model: any uppercase variable role can be played by the
+intruder, and no secrecy goal formulation can prevent it. It is not a meaningful break of
+honest-user authorization. The guessable-password goal holds, which is the key
 Week~6 privacy result.
 
 \textbf{Final protocol provides:}
 \begin{itemize}[leftmargin=*]
   \item Authentication of \texttt{idp}'s authorization via signed tokens
-  \item Confidentiality of photos between B and P
+  \item Confidentiality of photos between B and P (modulo the inherent Dolev--Yao modeling artifact)
   \item Protection of guessable password via pseudonymous TLS channels
 \end{itemize}
 

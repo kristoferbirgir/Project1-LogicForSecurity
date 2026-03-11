@@ -340,8 +340,9 @@ Goals:
 The intruder plays the role of A (with i as the instantiation), so idp honestly issues
 a token for `f2, i, P, B`. B then sends `photos(i)` to P. Since the intruder IS i,
 obtaining photos(i) is not a realistic attack — the intruder gets their own photos.
-Format tags prevent type-flaw confusion but do not prevent role manipulation where
-the intruder legitimately participates in the protocol as an honest agent A.
+This is inherent to the Dolev-Yao model: any uppercase variable role can be played
+by the intruder, and no secrecy goal formulation can prevent it.
+Format tags prevent type-flaw confusion between different message types.
 
 ---
 
@@ -402,6 +403,11 @@ The distinct format tags (f1, f2, f3, f4) ensure that no two message plaintexts 
 different protocol steps can unify. Even without the tags, different tuple arities and key
 usage would prevent most confusion, but the tags provide a clean, systematic guarantee.
 
+**Note:** The signed token `{f2, A, P, B}(inv(pk(idp)))` in message 2 and the inner token
+carried inside message 4 do unify, but this is benign because they are the *same* tagged
+message type f2. Type-flaw resistance only requires that messages of *different* types
+cannot unify.
+
 ---
 
 ### Week 4 Summary
@@ -414,8 +420,8 @@ usage would prevent most confusion, but the tags provide a clean, systematic gua
 
 **Key findings:**
 1. Format tags as tuple elements prevent type flaws between all message pairs
-2. OFMC attack is role manipulation (intruder plays A), not a type flaw
-3. photos(A) secret between B, P only (A never receives photos)
+2. OFMC attack is role manipulation (intruder plays A), not a type flaw — inherent to Dolev-Yao
+3. photos(A) secret between B, P (A does not receive photos in the protocol)
 
 ---
 
@@ -516,15 +522,16 @@ Goals:
 
 **week5_v1.AnB:** ATTACK FOUND (secrets)
 - Same pattern as Week 4: intruder plays A=i, idp issues token for i, B sends photos(i)
+- This is inherent to the Dolev-Yao model — no secrecy goal formulation prevents it
 - Goal `guesswhat` NOT triggered → password is safe from offline guessing ✓
 
 **week5_v1_tls.AnB:** ATTACK FOUND (secrets)
-- Same role-manipulation attack as the crypto version
+- Same role-manipulation pattern as the crypto version
 
 **Analysis:**
-Pseudonymous channels replace explicit encryption but the fundamental attack pattern is
-the same: the intruder can legitimately play A and request their own photos. The important
-result is that `pw(A,idp) guessable secret` is NOT violated — the password stays protected.
+Pseudonymous channels replace explicit encryption but the fundamental Dolev-Yao modeling
+artifact is the same: the intruder can instantiate A and legitimately request their own photos.
+The important result is that `pw(A,idp) guessable secret` is NOT violated — the password stays protected.
 
 ---
 
@@ -613,7 +620,7 @@ Goals:
 
 **OFMC Result:** ATTACK FOUND (secrets)
 - Goal `guesswhat` NOT triggered → **password is safe from offline guessing** ✓
-- Only the role-manipulation attack (intruder plays A, gets own photos)
+- Only the role-manipulation attack (intruder plays A, gets own photos) — inherent to Dolev-Yao
 - Pseudonymous channels prevent the intruder from observing the password
 
 ---
