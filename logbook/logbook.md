@@ -3,10 +3,10 @@
 ## Project Overview
 
 **Scenario:** Open Authorization (OAuth-like)
-- **A** = Alice (user who owns photos)
-- **B** = Photo storage server
-- **P** = Photo printing service
-- **IdP** = Identity Provider (like MitID)
+- **A** = Alice (user who owns photos) — uppercase, variable
+- **B** = Photo storage server — uppercase, variable
+- **P** = Photo printing service — uppercase, variable
+- **idp** = Identity Provider (like MitID) — **lowercase, honest constant** (intruder cannot instantiate)
 
 **Goal:** A wants P to access photos stored at B without:
 - Giving P access to other resources (e.g., email)
@@ -15,10 +15,10 @@
 
 **Assignment Constraints:**
 - A does NOT have a public/private key pair (simplified in Week 2)
-- A has a password shared with IdP (NOT for encryption)
+- A has a password `pw(A,idp)` shared with idp (NOT for encryption)
 - Everyone except A has public/private key pairs
-- Everyone knows IdP's public key
-- IdP is honest and trusted by all parties
+- Everyone knows idp's public key
+- idp is honest and trusted by all parties (lowercase constant enforces this)
 
 ---
 
@@ -30,16 +30,16 @@
 
 **Protocol sketch in natural language:**
 ```
-1. A tells IdP: "I want to authorize P to access my photos at B"
-2. IdP creates a signed authorization token
+1. A tells idp: "I want to authorize P to access my photos at B"
+2. idp creates a signed authorization token
 3. A forwards this token to P
-4. P presents the token to B
-5. B verifies the token and gives photos to P
+4. P presents the token to B (encrypted to B)
+5. B verifies the token and gives photos to P (encrypted to P)
 ```
 
 **Design diagram:**
 ```
-    A                   IdP                  P                   B
+    A                   idp                  P                   B
     |                    |                   |                   |
     |-- auth request --->|                   |                   |
     |<-- signed token ---|                   |                   |
@@ -48,97 +48,41 @@
     |                    |                   |<---- photos ------|
 ```
 
-**Key design questions:**
-- How does B verify the token? → Check IdP's signature
-- How are photos protected in transit? → Encrypt to P
-- What prevents token reuse? → (Not addressed in v1 - needs nonces)
-
 ---
 
 ### Version: week2_v1.AnB
 
 **Simplifications made (allowed in Week 2):**
-- A has public/private key pair (will be removed in Week 3)
+- A has public/private key pair (temporary, removed in Week 3)
 - All parties know all public keys
 - No password authentication yet
+- idp is lowercase (honest constant)
 
 **AnB Protocol:**
 ```
 Protocol: PhotoAuthorization_v1
 
 Types:
-  Agent A, B, P, IdP;
-  Number Na;
+  Agent A, B, P, idp;
   Function pk, photos;
 
 Knowledge:
-  A: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(A)), photos(A);
-  B: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(B)), photos(A);
-  P: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(P));
-  IdP: A, B, P, IdP, pk(A), pk(B), pk(P), pk(IdP), inv(pk(IdP));
+  A: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(A));
+  B: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(B)), photos(A);
+  P: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(P));
+  idp: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(idp));
 
 Actions:
-  A -> IdP: A, P, B
-  IdP -> A: {A, P, B}(inv(pk(IdP)))
-  A -> P: {A, P, B}(inv(pk(IdP)))
-  P -> B: {A, P, B}(inv(pk(IdP)))
+  A -> idp: {A, P, B}(pk(idp))
+  idp -> A: {A, P, B}(inv(pk(idp)))
+  A -> P: {A, P, B}(inv(pk(idp)))
+  P -> B: {{A, P, B}(inv(pk(idp)))}(pk(B))
   B -> P: {photos(A)}(pk(P))
 
 Goals:
-  B authenticates IdP on A, P, B
-  photos(A) secret between A, B, P
+  B authenticates idp on A, P, B
+  photos(A) secret between B, P
 ```
-
-**Message flow:**
-```
-1. A → IdP  : A, P, B                    (plaintext request)
-2. IdP → A  : {A, P, B}_inv(pk(IdP))     (signed token)
-3. A → P    : {A, P, B}_inv(pk(IdP))     (forward token)
-4. P → B    : {A, P, B}_inv(pk(IdP))     (present token)
-5. B → P    : {photos(A)}_pk(P)          (encrypted photos)
-```
-
-**Modeling considerations:**
-- `photos(A)` models "A's photos" as a function application
-- Token is signed by IdP (provides authenticity)
-- Photos encrypted to P (provides confidentiality)
-- Authentication goal: B should verify IdP signed the token
-
----
-
-### Week 2 Special Task: Static Analysis (Passive Intruder)
-
-**Question:** If the intruder ONLY observes network traffic (does not inject or modify messages), what can they learn according to the Dolev-Yao model?
-
-**Messages observable on the network:**
-```
-Message 1: A, P, B                         (plaintext)
-Message 2: {A, P, B}_inv(pk(IdP))          (signed, readable)
-Message 3: {A, P, B}_inv(pk(IdP))          (same token)
-Message 4: {A, P, B}_inv(pk(IdP))          (same token)
-Message 5: {photos(A)}_pk(P)               (encrypted)
-```
-
-**Dolev-Yao analysis - What passive intruder can derive:**
-
-| Data | Learnable? | Reasoning |
-|------|------------|-----------|
-| A (user identity) | ✅ Yes | Sent in plaintext in message 1 |
-| P (service identity) | ✅ Yes | Sent in plaintext in message 1 |
-| B (server identity) | ✅ Yes | Sent in plaintext in message 1 |
-| Authorization token content | ✅ Yes | Signature does not encrypt - content {A,P,B} is readable |
-| IdP's signature | ✅ Yes | Can see the signature (but cannot forge without inv(pk(IdP))) |
-| photos(A) | ❌ No | Encrypted with pk(P), intruder lacks inv(pk(P)) |
-
-**Derivation rules applied:**
-- Projection: From (A, P, B), derive A, P, B individually
-- Signature opening: From {M}_inv(pk(IdP)) and pk(IdP), can read M (but not forge)
-- Decryption blocked: {photos(A)}_pk(P) requires inv(pk(P)) which intruder doesn't have
-
-**Conclusion:**
-- **What passive intruder learns:** User A is authorizing service P to access server B
-- **What remains secret:** The actual photo content
-- **Privacy concern:** Metadata leak - the fact that A uses service P is revealed to anyone observing the network
 
 ---
 
@@ -146,49 +90,42 @@ Message 5: {photos(A)}_pk(P)               (encrypted)
 
 **Command:** `ofmc anb/week2_v1.AnB`
 
-**Result:** ATTACK FOUND
-
-**Attack trace:**
-```
-i -> (B,1): {A,P,B}_inv(pk(i))      
-(B,1) -> i: {photos(A)}_(pk(P))    
-
-secret leaked: photos(A)
-```
+**Result:** ATTACK FOUND (secrets)
 
 **Attack explanation:**
-1. Intruder creates a forged token `{A,P,B}_inv(pk(i))` signed with their own key
-2. Intruder sends this to B
-3. B accepts the token (doesn't verify signer is IdP)
-4. B sends photos encrypted to P
-5. Intruder obtains the encrypted photos
+The intruder plays A's role (A is an uppercase variable). Since idp is lowercase (honest),
+the intruder cannot forge idp's signature. Instead, the intruder sends a legitimate
+request to idp and manipulates the token flow so that B sends photos encrypted to a key
+the intruder controls.
 
-**Root cause:** 
-B accepts ANY valid signature, not specifically one from IdP. In the Dolev-Yao model, the intruder has their own key pair and can sign anything.
-
-**Problems identified:**
-1. No mechanism for B to verify the signer is specifically IdP
-2. No nonces - vulnerable to replay attacks
-3. No freshness guarantees
+**Key insight:** With lowercase idp, signature forgery is impossible. The attacks are about
+the intruder instantiating the variable agent roles (A, B, P).
 
 ---
 
-### Week 2 Summary
+### Week 2 Special Task: Static Analysis (Passive Intruder)
 
-**Completed:**
-- [x] Informal protocol design (natural language + diagram)
-- [x] First AnB protocol (week2_v1.AnB)
-- [x] Static analysis (passive intruder) - Special Task
-- [x] OFMC verification showing attack
+**Question:** If the intruder ONLY observes network traffic (passive), what can they learn?
 
-**Key findings:**
-- Passive intruder: Can learn metadata (who authorizes whom) but not photos
-- Active intruder: Can forge tokens and obtain photos
+**Messages observable on the network:**
+```
+Message 1: {A, P, B}(pk(idp))              (encrypted - unreadable)
+Message 2: {A, P, B}(inv(pk(idp)))          (signed - content readable)
+Message 3: {A, P, B}(inv(pk(idp)))          (same token)
+Message 4: {{token}}(pk(B))                 (encrypted - unreadable)
+Message 5: {photos(A)}(pk(P))               (encrypted - unreadable)
+```
 
-**Next steps for Week 3:**
-- Remove A's key pair (use password authentication with IdP)
-- Fix signature verification so B only accepts IdP signatures
-- Add nonces for freshness
+| Data | Learnable? | Reasoning |
+|------|------------|-----------|
+| A, P, B (identities) | Yes | Readable from signed token (msg 2) |
+| photos(A) | No | Encrypted with pk(P), intruder lacks inv(pk(P)) |
+| Token content | Yes | Signature does not encrypt |
+
+**Conclusion:**
+- **Passive intruder learns:** Metadata only (who authorizes whom)
+- **Remains secret:** Actual photo content
+- Active attacks require message injection and role manipulation
 
 ---
 
@@ -198,50 +135,36 @@ B accepts ANY valid signature, not specifically one from IdP. In the Dolev-Yao m
 
 **Changes from Week 2:**
 - A no longer has public/private key pair
-- A authenticates to IdP using password (shared secret)
+- A authenticates to idp using shared password `pw(A,idp)`
 - Password is NOT used as encryption key
-- A encrypts authentication request to IdP using pk(IdP)
+- A encrypts authentication request to idp using pk(idp)
+- P now encrypts the token to B: `{{token}}(pk(B))`
 
 **AnB Protocol:**
 ```
 Protocol: PhotoAuthorization_v2
 
 Types:
-  Agent A, B, P, IdP;
-  Number Na;
-  Function pk, photos, pwd;
+  Agent A, B, P, idp;
+  Function pk, photos, pw;
 
 Knowledge:
-  A: A, B, P, IdP, pk(B), pk(P), pk(IdP), pwd(A), photos(A);
-  B: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(B)), photos(A);
-  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
-  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp);
+  B: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(B)), photos(A);
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P));
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp);
 
 Actions:
-  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
-  IdP -> A: {A, P, B}(inv(pk(IdP)))
-  A -> P: {A, P, B}(inv(pk(IdP)))
-  P -> B: {A, P, B}(inv(pk(IdP)))
+  A -> idp: {A, P, B, pw(A,idp)}(pk(idp))
+  idp -> A: {A, P, B}(inv(pk(idp)))
+  A -> P: {A, P, B}(inv(pk(idp)))
+  P -> B: {{A, P, B}(inv(pk(idp)))}(pk(B))
   B -> P: {photos(A)}(pk(P))
 
 Goals:
-  B authenticates IdP on A, P, B
-  photos(A) secret between A, B, P
+  B authenticates idp on A, P, B
+  photos(A) secret between B, P
 ```
-
-**Message flow:**
-```
-1. A → IdP  : {A, P, B, pwd(A)}_(pk(IdP))   (encrypted auth request)
-2. IdP → A  : {A, P, B}_inv(pk(IdP))        (signed token)
-3. A → P    : {A, P, B}_inv(pk(IdP))        (forward token)
-4. P → B    : {A, P, B}_inv(pk(IdP))        (present token)
-5. B → P    : {photos(A)}_pk(P)             (encrypted photos)
-```
-
-**Modeling considerations:**
-- `pwd(A)` models A's password as a function (password of A)
-- Password sent encrypted to IdP (confidential but not used as key)
-- IdP is assumed honest (assignment constraint)
 
 ---
 
@@ -249,101 +172,60 @@ Goals:
 
 **Command:** `ofmc anb/week3_v1.AnB`
 
-**Result:** ATTACK FOUND (same as Week 2)
-
-**Attack trace:**
-```
-i -> (B,1): {A,P,B}_inv(pk(i))
-(B,1) -> i: {photos(A)}_(pk(P))
-
-secret leaked: photos(A)
-```
+**Result:** ATTACK FOUND (secrets)
 
 **Analysis:**
-The signature forgery attack from Week 2 still exists. Adding password authentication between A and IdP does NOT fix the core vulnerability - B still accepts any signed token.
-
-**Key observation:**
-- Password authentication: ✅ A proves identity to IdP
-- Signature verification: ❌ B still cannot verify signer is IdP
-
-**Note on password secrecy:**
-If we add `pwd(A) secret between A, IdP` as a goal, OFMC finds an attack where intruder plays IdP. This violates the "IdP is honest" assumption from the assignment, so we exclude this attack from our threat model.
+Same pattern as Week 2 — the intruder can play A's role and manipulate the protocol
+to leak photos. The password authentication between A and idp does not prevent this
+because A, B, P are all uppercase variables that the intruder can instantiate.
 
 ---
 
 ### Week 3 Special Task: Lazy Intruder Execution
 
-**Goal:** Show that role P is executable by the intruder using the lazy intruder technique.
+**Goal:** Show that role P is executable by the intruder using constraint solving (lazy intruder).
 
 **Setup:**
-- P = intruder (i)
-- A, B, IdP = honest agents
+- Intruder plays P
+- A, B, idp = honest agents
 
 **P's role in the protocol:**
 ```
-Input  (step 3): Receive {A, P, B}(inv(pk(IdP))) from A
-Output (step 4): Send {A, P, B}(inv(pk(IdP))) to B
+Input  (step 3): Receive token = {A, P, B}(inv(pk(idp))) from A
+Output (step 4): Send {{A, P, B}(inv(pk(idp)))}(pk(B)) to B
 Input  (step 5): Receive {photos(A)}(pk(P)) from B
 ```
 
-**Lazy Intruder Analysis:**
+**Formal Constraint Solving (Lecture Style):**
 
-**Step 0: Initial Intruder Knowledge (IK₀)**
+**Initial intruder knowledge IK₀:**
 ```
-IK₀ = {A, B, i, IdP, pk(A), pk(B), pk(i), pk(IdP), inv(pk(i))}
-```
-(All agent names, public keys, and intruder's private key)
-
-**Step 1-2: Honest execution between A and IdP**
-```
-A → IdP: {A, i, B, pwd(A)}_(pk(IdP))
-IdP → A: {A, i, B}_inv(pk(IdP))
-```
-(Intruder observes but these are encrypted/signed - cannot extract pwd(A))
-
-**Step 3: A sends token to P (intruder)**
-```
-A → i: {A, i, B}_inv(pk(IdP))
-```
-Intruder knowledge after step 3:
-```
-IK₃ = IK₀ ∪ {{A, i, B}_inv(pk(IdP))}
+IK₀ = {A, B, i, idp, pk(B), pk(i), pk(idp), inv(pk(i))}
 ```
 
-**Step 4: Intruder must send token to B**
-
-*Constraint:* Intruder must produce `{A, i, B}_inv(pk(IdP))`
-
-*Lazy Intruder Derivation:*
+**After intercepting message 3 (A → P):**
 ```
-Required: {A, i, B}_inv(pk(IdP))
-From IK₃: {A, i, B}_inv(pk(IdP)) ∈ IK₃  ✓
-```
-**Constraint satisfied** - intruder directly has the required message.
-
-**Step 5: B sends photos to P (intruder)**
-```
-B → i: {photos(A)}_(pk(i))
-```
-Intruder knowledge after step 5:
-```
-IK₅ = IK₃ ∪ {{photos(A)}_(pk(i))}
+IK₁ = IK₀ ∪ {{A, i, B}(inv(pk(idp)))}
 ```
 
-*Decryption:*
+**Constraint:** Intruder must produce `{{A, i, B}(inv(pk(idp)))}(pk(B))`
+
+**Resolution:**
+1. **Axiom:** `{A, i, B}(inv(pk(idp)))` ∈ IK₁ (intercepted token)
+2. **Axiom:** `pk(B)` ∈ IK₀ (public key)
+3. **Compose (encryption):** From (1) and (2), compose `{{A, i, B}(inv(pk(idp)))}(pk(B))` ✓
+
+**After step 5:** B sends `{photos(A)}(pk(i))` encrypted to intruder's key.
 ```
-From {photos(A)}_(pk(i)) and inv(pk(i)) ∈ IK₀:
-Derive: photos(A)  ✓
+IK₂ = IK₁ ∪ {{photos(A)}(pk(i))}
 ```
+4. **Axiom:** `{photos(A)}(pk(i))` ∈ IK₂
+5. **Axiom:** `inv(pk(i))` ∈ IK₀
+6. **Decompose (decryption):** From (4) and (5), derive `photos(A)` ✓
 
-**Conclusion:**
-**Role P is executable by the intruder.**
-
-The intruder can successfully play role P because:
-1. The token received in step 3 can be forwarded directly in step 4 (no transformation needed)
-2. Photos received in step 5 are encrypted with pk(i), which intruder can decrypt
-
-This demonstrates that any party who receives the authorization token can present it to B - the protocol does not bind the token to a specific recipient.
+**Conclusion:** Role P is executable by the intruder. All outgoing messages can be
+constructed from IK via Axiom and Compose rules. The token received in step 3 can
+be forwarded with encryption in step 4.
 
 ---
 
@@ -376,189 +258,180 @@ This demonstrates that any party who receives the authorization token can presen
 
 ### Changes from Week 3
 
-1. **Formats added** - Message structures designed for type-flaw resistance
-2. **Key Lookup Protocol** - Separate protocol for A to get public keys from IdP
-3. **A's initial knowledge reduced** - A only knows pk(IdP) initially
+1. **Format tags f1–f4** — Explicit constants tagging each message type for type-flaw resistance
+2. **Key Lookup Protocol** — Separate protocol for A to get public keys from idp
+3. **P encrypts token to B** — `{f3, P, token}(pk(B))` prevents B from accepting raw tokens
+4. **photos(A) removed from A's knowledge** — A never possesses the photos
 
 ---
 
 ### Key Lookup Protocol: key_lookup.AnB
 
-**Purpose:** A asks IdP for public key of another party (e.g., B or P)
+**Purpose:** A asks idp for the public key of B
 
 **Protocol:**
 ```
+Protocol: KeyLookup
+
 Types:
-  Agent A, B, IdP;
-  Function pk, pwd;
+  Agent A, B, idp;
+  Function pk, pw;
 
 Knowledge:
-  A: A, B, IdP, pk(IdP), pwd(A);
-  IdP: A, B, IdP, pk(IdP), pk(B), inv(pk(IdP)), pwd(A);
+  A: A, B, idp, pk(idp), pw(A,idp), f5;
+  idp: A, B, idp, pk(idp), pk(B), inv(pk(idp)), pw(A,idp), f5;
 
 Actions:
-  A -> IdP: {A, B, pwd(A)}(pk(IdP))
-  IdP -> A: {B, pk(B)}(inv(pk(IdP)))
+  A -> idp: {f5, A, B, pw(A,idp)}(pk(idp))
+  idp -> A: {f5, B, pk(B)}(inv(pk(idp)))
 
 Goals:
-  A authenticates IdP on B, pk(B)
+  A authenticates idp on f5, B, pk(B)
 ```
 
 **OFMC Result:** ATTACK FOUND (weak_auth)
-- Attack involves intruder as IdP (violates "IdP honest" assumption)
-- Under honest IdP assumption, protocol is acceptable
+- The response `{f5, B, pk(B)}(inv(pk(idp)))` does not bind to the requester A, so the intruder can replay it to a different session.
+- Under honest idp assumption, protocol is acceptable for our purposes.
 
 ---
 
 ### Main Protocol: week4_v1.AnB
 
-**Protocol with formats:**
+**Protocol with format tags:**
 ```
 Protocol: PhotoAuthorization_v3
 
 Types:
-  Agent A, B, P, IdP;
-  Number Na;
-  Function pk, photos, pwd;
+  Agent A, B, P, idp;
+  Function pk, photos, pw;
 
 Knowledge:
-  A: A, B, P, IdP, pk(B), pk(P), pk(IdP), pwd(A), photos(A);
-  B: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(B)), photos(A);
-  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
-  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), f1, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(B)), photos(A), f1, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), f1, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, f4;
 
 Actions:
-  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
-  IdP -> A: {IdP, A, P, B}(inv(pk(IdP)))
-  A -> P: {IdP, A, P, B}(inv(pk(IdP)))
-  P -> B: {P, {IdP, A, P, B}(inv(pk(IdP)))}(pk(B))
-  B -> P: {B, photos(A)}(pk(P))
+  A -> idp: {f1, A, P, B, pw(A,idp)}(pk(idp))
+  idp -> A: {f2, A, P, B}(inv(pk(idp)))
+  A -> P: {f2, A, P, B}(inv(pk(idp)))
+  P -> B: {f3, P, {f2, A, P, B}(inv(pk(idp)))}(pk(B))
+  B -> P: {f4, B, photos(A)}(pk(P))
 
 Goals:
-  B authenticates IdP on IdP, A, P, B
-  photos(A) secret between A, B, P
+  B authenticates idp on f2, A, P, B
+  photos(A) secret between B, P
 ```
 
-**Message formats (for type-flaw resistance):**
-| Msg | Format | Purpose |
-|-----|--------|---------|
-| 1 | `{A, P, B, pwd(A)}_(pk(IdP))` | Auth request (4-tuple encrypted) |
-| 2 | `{IdP, A, P, B}_(inv(pk(IdP)))` | Token with IdP identity (4-tuple signed) |
-| 3 | `{IdP, A, P, B}_(inv(pk(IdP)))` | Same token forwarded |
-| 4 | `{P, {token}_(inv(pk(IdP)))}_(pk(B))` | Nested: P + signed token |
-| 5 | `{B, photos(A)}_(pk(P))` | Response with B identity (pair) |
+**Format tags (tuple elements, not function applications):**
+| Tag | Message | Purpose |
+|-----|---------|---------|
+| f1 | `{f1, A, P, B, pw(A,idp)}(pk(idp))` | Auth request (5-tuple) |
+| f2 | `{f2, A, P, B}(inv(pk(idp)))` | Signed token (4-tuple) |
+| f3 | `{f3, P, {token}(inv(pk(idp)))}(pk(B))` | Photo request (nested) |
+| f4 | `{f4, B, photos(A)}(pk(P))` | Photo response (3-tuple) |
+
+**Important:** Format tags are placed as tuple elements (e.g., `{f1, A, P, B, ...}`) NOT as function applications (e.g., `f1(A,P,B)`). Function applications create opaque terms in OFMC that receivers cannot decompose.
 
 ---
 
 ### OFMC Verification
 
-**Result:** ATTACK FOUND (same signature forgery)
+**Command:** `ofmc anb/week4_v1.AnB`
 
-**Attack trace:**
-```
-i -> (B,1): {P, {i, A, P, B}_inv(pk(i))}_(pk(B))
-(B,1) -> i: {B, photos(A)}_(pk(P))
-```
+**Result:** ATTACK FOUND (secrets)
 
-**Analysis:** 
-The signature forgery attack persists because B cannot distinguish pk(IdP) from pk(i). Adding formats doesn't fix the fundamental authentication issue - it only prevents type flaws.
-
-**Note:** The signature forgery is a separate issue from type-flaw resistance. Type flaws are about confusing different message types; signature forgery is about authenticating the signer.
+**Analysis:**
+The intruder plays the role of A (with i as the instantiation), so idp honestly issues
+a token for `f2, i, P, B`. B then sends `photos(i)` to P. Since the intruder IS i,
+obtaining photos(i) is not a realistic attack — the intruder gets their own photos.
+Format tags prevent type-flaw confusion but do not prevent role manipulation where
+the intruder legitimately participates in the protocol as an honest agent A.
 
 ---
 
 ### Week 4 Special Task: Type-Flaw Resistance Proof
 
-**Definition:** A protocol is type-flaw resistant if for any two messages M₁, M₂ in the set of sub-messages of the protocol (SMP), if M₁ and M₂ are not variables and have a unifier σ, then type(M₁) = type(M₂).
+**Definition:** A protocol is type-flaw resistant if for any two messages M₁, M₂ in the
+sub-messages of the protocol (SMP), if M₁ and M₂ are not variables and have a unifier σ,
+then type(M₁) = type(M₂).
 
 **Sub-Messages of Protocol (SMP):**
 
-From message 1: `{A, P, B, pwd(A)}_(pk(IdP))`
+From message 1: `{f1, A, P, B, pw(A,idp)}(pk(idp))`
 ```
-SMP₁ = {A, P, B, pwd(A), pk(IdP), {A,P,B,pwd(A)}_(pk(IdP))}
-```
-
-From message 2: `{IdP, A, P, B}_(inv(pk(IdP)))`
-```
-SMP₂ = {IdP, A, P, B, inv(pk(IdP)), {IdP,A,P,B}_(inv(pk(IdP)))}
+SMP₁ = {f1, A, P, B, pw(A,idp), pk(idp), {f1,A,P,B,pw(A,idp)}(pk(idp))}
 ```
 
-From message 3: Same as message 2
-
-From message 4: `{P, {IdP,A,P,B}_(inv(pk(IdP)))}_(pk(B))`
+From message 2: `{f2, A, P, B}(inv(pk(idp)))`
 ```
-SMP₄ = {P, {IdP,A,P,B}_(inv(pk(IdP))), pk(B), {P,{...}}_(pk(B))}
+SMP₂ = {f2, A, P, B, inv(pk(idp)), {f2,A,P,B}(inv(pk(idp)))}
 ```
 
-From message 5: `{B, photos(A)}_(pk(P))`
+From message 4: `{f3, P, {f2,A,P,B}(inv(pk(idp)))}(pk(B))`
 ```
-SMP₅ = {B, photos(A), pk(P), {B,photos(A)}_(pk(P))}
+SMP₄ = {f3, P, {f2,A,P,B}(inv(pk(idp))), pk(B), outer}
 ```
 
-**Type Analysis:**
+From message 5: `{f4, B, photos(A)}(pk(P))`
+```
+SMP₅ = {f4, B, photos(A), pk(P), {f4,B,photos(A)}(pk(P))}
+```
 
-| Message | Top-level structure | Type |
-|---------|--------------------|----|
-| Msg 1 | 4-tuple: (Agent, Agent, Agent, Function) | AuthRequest |
-| Msg 2 | 4-tuple: (Agent, Agent, Agent, Agent) | Token |
-| Msg 4 outer | 2-tuple: (Agent, SignedMsg) | PhotoRequest |
-| Msg 5 | 2-tuple: (Agent, Function) | PhotoResponse |
+**Unification check — format tags ensure distinctness:**
 
-**Unification check:**
+1. **Msg 1 vs Msg 2:** Different leading tag (f1 ≠ f2) and different arity (5-tuple vs 4-tuple)
+   → **No unifier** ✓
 
-1. **Msg 1 vs Msg 2:** Both 4-tuples but different types
-   - Msg 1: (A, P, B, pwd(A)) contains function pwd(A)
-   - Msg 2: (IdP, A, P, B) contains only agents
-   - **No unifier** (pwd(A) ≠ Agent type)
+2. **Msg 1 vs Msg 4 outer:** f1 ≠ f3 and 5-tuple vs 3-tuple
+   → **No unifier** ✓
 
-2. **Msg 2/3 vs Msg 4 inner:** 
-   - Same structure (token appears in both)
-   - **Same type** ✓
+3. **Msg 1 vs Msg 5:** f1 ≠ f4 and 5-tuple vs 3-tuple
+   → **No unifier** ✓
 
-3. **Msg 4 outer vs Msg 5:**
-   - Msg 4: (Agent, SignedToken)
-   - Msg 5: (Agent, photos(A))
-   - **No unifier** (SignedToken ≠ Function application)
+4. **Msg 2 vs Msg 4 outer:** f2 ≠ f3 and 4-tuple vs 3-tuple
+   → **No unifier** ✓
 
-4. **Encrypted messages:**
-   - Msg 1: encrypted with pk(IdP)
-   - Msg 4: encrypted with pk(B)  
-   - Msg 5: encrypted with pk(P)
-   - Different keys prevent confusion
+5. **Msg 2 vs Msg 5:** f2 ≠ f4 and 4-tuple vs 3-tuple
+   → **No unifier** ✓
 
-**Conclusion: Protocol is type-flaw resistant**
+6. **Msg 4 outer vs Msg 5:** f3 ≠ f4. Second component (P vs B) and third component
+   (signed token vs photos(A)) also differ structurally.
+   → **No unifier** ✓
 
-The different message formats (tuples of different lengths, inclusion of agent identities, and function applications) ensure that messages cannot be confused with each other. Any two non-variable sub-messages that unify have the same type.
+7. **Encrypted messages use different keys:** pk(idp), pk(B), pk(P), inv(pk(idp))
+   → Different keys prevent cross-message confusion ✓
+
+**Conclusion: Protocol is type-flaw resistant.**
+The distinct format tags (f1, f2, f3, f4) ensure that no two message plaintexts from
+different protocol steps can unify. Even without the tags, different tuple arities and key
+usage would prevent most confusion, but the tags provide a clean, systematic guarantee.
 
 ---
 
 ### Week 4 Summary
 
 **Completed:**
-- [x] Key lookup protocol (key_lookup.AnB)
-- [x] Main protocol with formats (week4_v1.AnB)
-- [x] A's initial knowledge reduced (uses key lookup)
-- [x] OFMC verification (signature attack persists)
+- [x] Key lookup protocol (key_lookup.AnB) with format tag f5
+- [x] Main protocol with format tags f1–f4 (week4_v1.AnB)
+- [x] OFMC verification (secrets attack — intruder plays A)
 - [x] Type-flaw resistance proof (Special Task)
 
 **Key findings:**
-1. Formats prevent type flaws but don't fix signature forgery
-2. Key lookup allows A to start with only pk(IdP)
-3. Under honest IdP assumption, both protocols are acceptable
-
-**Problems remaining:**
-- Signature forgery attack (fundamental Dolev-Yao issue)
-- Need authenticated channel or pre-trusted keys
+1. Format tags as tuple elements prevent type flaws between all message pairs
+2. OFMC attack is role manipulation (intruder plays A), not a type flaw
+3. photos(A) secret between B, P only (A never receives photos)
 
 ---
 
-## Week 5 – Channels (TLS Pseudonymous)
+## Week 5 – Channels (Pseudonymous TLS)
 
 ### Changes from Week 4
 
-1. **Replaced encryption with channels** - Using `*->`, `->*`, `*->*` notation
-2. **A has no keys** - Only needs password, uses TLS for secure communication
-3. **Server-side TLS model** - Servers (IdP, B, P) have certificates
+1. **Replaced encryption with pseudonymous channels** — `[A] *->* idp` notation (TLS server-side auth)
+2. **A has no keys** — Only needs password; TLS channels handle confidentiality/authentication
+3. **Server-to-server uses mutual TLS** — `P *->* B` (both have certificates)
+4. **Guessable secret goal added** — `pw(A,idp) guessable secret between A, idp`
 
 ---
 
@@ -567,110 +440,128 @@ The different message formats (tuples of different lengths, inclusion of agent i
 | Notation | Meaning | TLS Equivalent |
 |----------|---------|----------------|
 | `A -> B: M` | Insecure (Dolev-Yao) | No TLS |
-| `A *-> B: M` | Confidential only | TLS, client not auth |
-| `A ->* B: M` | Authenticated only | Signed message |
+| `A *-> B: M` | Confidential only | Encrypted, no sender auth |
+| `A ->* B: M` | Authenticated only | Signed, not encrypted |
 | `A *->* B: M` | Secure (both) | Mutual TLS |
+| `[A] *->* B: M` | Pseudonymous secure | TLS server-side auth (A anonymous, B authenticated) |
+| `B *->* [A]: M` | Reply on pseudonymous | Response on same TLS session |
 
 ---
 
 ### Main Protocol: week5_v1.AnB
 
-**Protocol with channels:**
+**Protocol with pseudonymous channels:**
 ```
+Protocol: PhotoAuthorization_v4
+
+Types:
+  Agent A, B, P, idp;
+  Function pk, photos, pw;
+
 Knowledge:
-  A: A, B, P, IdP, pwd(A);                                    # No keys!
-  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
-  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
-  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+  A: A, B, P, idp, pw(A,idp), f1, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(idp), inv(pk(B)), photos(A), f1, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), f1, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, f4;
 
 Actions:
-  A *->* IdP: A, P, B, pwd(A)                    # TLS to IdP
-  IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))       # Signed token back
-  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))          # Forward token
-  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))      # Present to B
-  B *->* P: B, photos(A)                          # Photos response
+  [A] *->* idp: f1, A, P, B, pw(A,idp)
+  idp *->* [A]: {f2, A, P, B}(inv(pk(idp)))
+  [A] *->* P: {f2, A, P, B}(inv(pk(idp)))
+  P *->* B: f3, P, {f2, A, P, B}(inv(pk(idp)))
+  B *->* P: f4, B, photos(A)
+
+Goals:
+  B authenticates idp on f2, A, P, B
+  photos(A) secret between B, P
+  pw(A,idp) guessable secret between A, idp
 ```
 
-**Key insight:** Token still needs IdP's signature for B to verify (can't replace with channels since B has no direct channel to IdP).
+**Key design decisions:**
+- `[A] *->* idp` — A is pseudonymous (no client certificate), idp is authenticated (has cert)
+- Token `{f2, A, P, B}(inv(pk(idp)))` still needs idp's signature because B verifies it offline (no direct channel to idp)
+- `P *->* B` and `B *->* P` are mutual TLS (both servers have certificates)
+- A knows no public keys — channels abstract the TLS infrastructure
 
 ---
 
-### Special Task: Server-Side Only TLS (week5_v1_tls.AnB)
+### Special Task: Crypto Comparison (week5_v1_tls.AnB)
 
-**Server-side authenticated TLS means:**
-- Server has certificate (key pair)
-- Client is NOT cryptographically authenticated
+**Purpose:** Same protocol *without* channels, kept for side-by-side comparison. This is essentially the Week 4 protocol with format tags, showing what the channel version replaces.
 
-**Modeling:**
+**Protocol (cryptographic version for comparison):**
 ```
-# Client -> Server: confidential only (server doesn't know client)
-A *-> IdP: A, P, B, pwd(A)
+Protocol: PhotoAuthorization_v4_crypto
 
-# Server -> Client: authenticated (server signs response)
-IdP ->* A: {IdP, A, P, B}(inv(pk(IdP)))
+Types:
+  Agent A, B, P, idp;
+  Function pk, photos, pw;
 
-# Client -> Server: confidential only
-A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
+Knowledge:
+  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), f1, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(B)), photos(A), f1, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), f1, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, f4;
 
-# Server-to-Server: Mutual TLS (both have certificates)
-P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
-B *->* P: B, photos(A)
+Actions:
+  A -> idp: {f1, A, P, B, pw(A,idp)}(pk(idp))
+  idp -> A: {f2, A, P, B}(inv(pk(idp)))
+  A -> P: {f2, A, P, B}(inv(pk(idp)))
+  P -> B: {f3, P, {f2, A, P, B}(inv(pk(idp)))}(pk(B))
+  B -> P: {f4, B, photos(A)}(pk(P))
+
+Goals:
+  B authenticates idp on f2, A, P, B
+  photos(A) secret between B, P
 ```
 
 ---
 
 ### OFMC Verification
 
-**Result:** ATTACK FOUND (same signature forgery)
+**week5_v1.AnB:** ATTACK FOUND (secrets)
+- Same pattern as Week 4: intruder plays A=i, idp issues token for i, B sends photos(i)
+- Goal `guesswhat` NOT triggered → password is safe from offline guessing ✓
 
-**Attack trace:**
-```
-i -> (P,1): {{i,i,P,B}_inv(pk(i))}_inv(authChCr(i))
-(P,1) -> i: {{P,{token}_inv(pk(i))}_inv(authChCr(P))}_(confChCr(B))
-i -> (B,1): (same)
-(B,1) -> i: {{B,photos(i)}_inv(authChCr(B))}_(confChCr(P))
-```
+**week5_v1_tls.AnB:** ATTACK FOUND (secrets)
+- Same role-manipulation attack as the crypto version
 
 **Analysis:**
-- Intruder creates forged token signed with own key
-- P accepts it (no way to distinguish pk(IdP) from pk(i))
-- B verifies signature with pk(i) thinking it's pk(IdP)
-
-**Under honest IdP assumption:** Attack excluded - intruder cannot obtain inv(pk(IdP)).
+Pseudonymous channels replace explicit encryption but the fundamental attack pattern is
+the same: the intruder can legitimately play A and request their own photos. The important
+result is that `pw(A,idp) guessable secret` is NOT violated — the password stays protected.
 
 ---
 
 ### Cryptography Replacement Analysis
 
-| Original | Channel Version | Replaced? |
-|----------|-----------------|-----------|
-| `{M}(pk(IdP))` | `A *-> IdP: M` | ✓ Yes |
-| `{M}(pk(B))` | `P *-> B: M` | ✓ Yes |
-| `{M}(pk(P))` | `B *-> P: M` | ✓ Yes |
-| `{M}(inv(pk(IdP)))` | Cannot replace | ✗ No |
+| Original (crypto) | Channel Version | Replaced? |
+|--------------------|-----------------|-----------|
+| `{M}(pk(idp))` | `[A] *->* idp: M` | ✓ Yes |
+| `{M}(pk(B))` | `P *->* B: M` | ✓ Yes |
+| `{M}(pk(P))` | `B *->* P: M` | ✓ Yes |
+| `{M}(inv(pk(idp)))` | Cannot replace | ✗ No |
 
 **Token signature cannot be replaced** because:
-1. B needs to verify IdP's approval
-2. B has no direct TLS session with IdP
+1. B needs to verify idp's approval offline
+2. B has no direct TLS session with idp
 3. The token travels through A and P before reaching B
-4. Signature is the only way for B to verify origin
+4. Signature is the only mechanism for B to verify origin
 
 ---
 
 ### Week 5 Summary
 
 **Completed:**
-- [x] week5_v1.AnB with secure channels
-- [x] week5_v1_tls.AnB with server-side only TLS (Special Task)
-- [x] OFMC verification (signature attack persists)
-- [x] Analysis of what can/cannot be replaced
+- [x] week5_v1.AnB with pseudonymous channels
+- [x] week5_v1_tls.AnB crypto comparison version (Special Task)
+- [x] OFMC verification (secrets attack — password safe from guessing)
+- [x] Analysis of what can/cannot be replaced by channels
 
-**Findings:**
-1. Encryption for confidentiality → Replaced by `*->` channels
-2. Encryption for authentication → Replaced by `->*` channels  
-3. Signature on token → **Cannot replace** (needs offline verification)
-
-**Remaining issue:** Signature forgery attack persists because the authorization token must be signed for B to verify without contact to IdP.
+**Key findings:**
+1. `[A] *->* idp` models TLS server-side auth (A is pseudonymous, idp authenticated)
+2. Password guessing is prevented by pseudonymous channels
+3. Token signature must remain — B verifies offline without channel to idp
 
 ---
 
@@ -678,8 +569,8 @@ i -> (B,1): (same)
 
 ### Changes from Week 5
 
-1. **Added guessable secret goal** - Password modeled as guessable
-2. **Created insecure variant** - Demonstrates offline guessing attack
+1. **Guessable secret goal verified** — `pw(A,idp) guessable secret between A, idp`
+2. **Created insecure variant** — Hash-based challenge-response demonstrating offline guessing
 
 ---
 
@@ -689,84 +580,127 @@ A guessable secret is a value (like a password) that:
 - Has low entropy (dictionary word, short, predictable)
 - Can be subject to **offline dictionary attacks**
 
-**Offline attack:** Intruder captures encrypted message containing password, then tries decrypting with guessed passwords until one works.
+**Offline attack:** Intruder observes protocol messages, then tries guessed passwords
+offline to see if a guess produces the observed message.
 
-**OFMC syntax:** `pwd(A) guessable secret between A, IdP`
+**OFMC syntax:** `pw(A,idp) guessable secret between A, idp`
 
 ---
 
 ### Main Protocol: week6_v1.AnB
 
-**Protocol (same as Week 5 with guessable password goal):**
+**Protocol (same as Week 5 — pseudonymous channels with guessable secret goal):**
 ```
+Protocol: PhotoAuthorization_v5
+
+Types:
+  Agent A, B, P, idp;
+  Function pk, photos, pw;
+
+Knowledge:
+  A: A, B, P, idp, pw(A,idp), f1, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(idp), inv(pk(B)), photos(A), f1, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), f1, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, f4;
+
 Actions:
-  A *->* IdP: A, P, B, pwd(A)           # Secure channel - no guessing possible
-  IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))
-  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
-  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
-  B *->* P: B, photos(A)
+  [A] *->* idp: f1, A, P, B, pw(A,idp)
+  idp *->* [A]: {f2, A, P, B}(inv(pk(idp)))
+  [A] *->* P: {f2, A, P, B}(inv(pk(idp)))
+  P *->* B: f3, P, {f2, A, P, B}(inv(pk(idp)))
+  B *->* P: f4, B, photos(A)
 
 Goals:
-  B authenticates IdP on IdP, A, P, B
+  B authenticates idp on f2, A, P, B
   photos(A) secret between B, P
-  pwd(A) guessable secret between A, IdP   # ← NEW
+  pw(A,idp) guessable secret between A, idp
 ```
 
-**OFMC Result:** ATTACK FOUND (signature forgery only)
-- Goal `guesswhat` NOT triggered → **password is safe from guessing**
-- Only the usual signature forgery attack (excluded under honest IdP)
+**OFMC Result:** ATTACK FOUND (secrets)
+- Goal `guesswhat` NOT triggered → **password is safe from offline guessing** ✓
+- Only the role-manipulation attack (intruder plays A, gets own photos)
+- Pseudonymous channels prevent the intruder from observing the password
 
 ---
 
-### Special Task: Demonstrating Guessing Attack
+### Special Task: Demonstrating Offline Guessing Attack
+
+**Why pk-encryption is NOT a good insecure example:**
+Encrypting the password as `{pw(A,idp)}(pk(idp))` does NOT allow offline guessing —
+the intruder cannot decrypt this ciphertext (only idp has `inv(pk(idp))`), so the intruder
+has no way to verify whether a guessed password is correct.
+
+**Hash-based challenge-response IS vulnerable:**
+If idp sends a nonce NB and A responds with `h(pw(A,idp), NB)`, the intruder observes
+both NB and `h(pw(A,idp), NB)` on the wire. The intruder can then guess passwords
+and recompute `h(guessedPW, NB)` to check if it matches the observed hash.
 
 **Insecure version (week6_insecure.AnB):**
 ```
+Protocol: PhotoAuthorization_v5_insecure
+
+Types:
+  Agent A, B, P, idp;
+  Number NB;
+  Function pk, photos, pw, h;
+
+Knowledge:
+  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), h, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(B)), photos(A), h, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), h, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), h, f2, f3, f4;
+
 Actions:
-  # Password sent over regular encryption, not secure channel
-  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))    # ← VULNERABLE
-  ...
+  A -> idp: A, P, B
+  idp -> A: NB
+  A -> idp: h(pw(A,idp), NB)
+  idp -> A: {f2, A, P, B}(inv(pk(idp)))
+  A -> P: {f2, A, P, B}(inv(pk(idp)))
+  P -> B: {f3, P, {f2, A, P, B}(inv(pk(idp)))}(pk(B))
+  B -> P: {f4, B, photos(A)}(pk(P))
+
+Goals:
+  B authenticates idp on f2, A, P, B
+  photos(A) secret between B, P
+  pw(A,idp) guessable secret between A, idp
 ```
 
-**OFMC Result:** ATTACK FOUND (`guesswhat`)
+**OFMC Result:** ATTACK FOUND (`guesswhat`) ✓
 
-```
-ATTACK TRACE:
-(A,1) -> i: {A,P,B,pwd(A)}_(pk(IdP))
-i can produce secret {A,P,B,guessPW}_(pk(IdP))
-```
+OFMC reports: `i can produce secret h(guessPW, x310)` — confirming the intruder
+can verify password guesses offline by recomputing the hash with the observed nonce.
 
-**Analysis:**
-1. Intruder intercepts `{A, P, B, pwd(A)}_(pk(IdP))`
-2. Intruder tries guessed passwords: `{A, P, B, guess1}_(pk(IdP))`
-3. When guess matches captured ciphertext → password recovered
+**Attack mechanism:**
+1. Intruder intercepts `A -> idp: A, P, B` and `idp -> A: NB` (nonce visible)
+2. Intruder intercepts `A -> idp: h(pw(A,idp), NB)` (hash visible)
+3. Intruder guesses password `guessPW`, computes `h(guessPW, NB)`
+4. If `h(guessPW, NB) = h(pw(A,idp), NB)` → password recovered
 
 ---
 
 ### Why Secure Channels Prevent Guessing
 
-| Channel | Intruder sees | Guessing possible? |
-|---------|---------------|-------------------|
-| `A -> IdP: {pwd}(pk(IdP))` | Ciphertext | ✓ Yes (offline) |
-| `A *->* IdP: pwd` | Nothing | ✗ No |
+| Protocol variant | Intruder sees | Guessing possible? |
+|------------------|---------------|-------------------|
+| `A -> idp: h(pw, NB)` | Hash + nonce | ✓ Yes (offline) |
+| `[A] *->* idp: pw` | Nothing (TLS) | ✗ No |
 
-**Secure channels** (`*->*`) abstract TLS/authenticated encryption where:
-- Forward secrecy protects against capture
-- No ciphertext available for offline guessing
+**Pseudonymous channels** (`[A] *->* idp`) abstract TLS with server-side authentication:
+- The password travels inside an encrypted TLS session
+- The intruder sees no ciphertext containing the password
+- No material available for offline guessing
 
 ---
 
 ### Week 6 Summary
 
 **Completed:**
-- [x] week6_v1.AnB with guessable password goal
-- [x] week6_insecure.AnB demonstrating guessing attack (Special Task)
-- [x] OFMC verification (secure version protects password)
+- [x] week6_v1.AnB — secure version with guessable password goal
+- [x] week6_insecure.AnB — hash-based challenge-response demonstrating guessing (Special Task)
+- [x] OFMC verification: secure version protects password, insecure triggers `guesswhat`
 
 **Key findings:**
-1. Guessable passwords + encryption = **vulnerable to offline guessing**
-2. Guessable passwords + secure channels = **safe**
-3. Our protocol protects passwords because A→IdP uses `*->*`
-
-**Protocol security:** Under honest IdP assumption, protocol is secure even with guessable passwords.
-- [ ] Special Task: Guessable password verification
+1. Hash-based challenge-response (`h(pw, NB)`) enables offline guessing — intruder verifies guesses
+2. Pseudonymous channels prevent guessing — no password-derived material on the wire
+3. pk-encryption of password does NOT enable guessing (intruder cannot decrypt)
+4. Our final protocol protects passwords because A→idp uses `[A] *->* idp`

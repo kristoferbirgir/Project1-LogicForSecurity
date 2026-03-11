@@ -1,56 +1,39 @@
 Protocol: PhotoAuthorization_v4
 
-# Week 5 - Using TLS pseudonymous channels (server-side auth only)
-# Replace encryption with channels where possible
+# Week 5 - Using pseudonymous channels (TLS server-side auth)
 # 
-# Channel notation:
-#   A *-> B: M   - confidential channel (only B reads)
-#   A ->* B: M   - authenticated channel (B knows it's from A)
-#   A *->* B: M  - secure channel (both)
+# TLS with server-side auth only:
+#   Server is authenticated (has certificate)
+#   Client is pseudonymous (server doesn't know client identity)
 #
-# TLS server-side auth = server has certificate
-#   Client -> Server: confidential (encrypted to server's key)
-#   Server -> Client: authenticated (server's certificate)
+# Pseudonymous channel notation (from lecture):
+#   [A] *->* B  = A has pseudonymous secure channel to B
+#                  (B knows channel owner but not A's identity)
+#   B *->* [A]  = B replies on same pseudonymous channel
+#
+# For client-authenticated channels (between servers with certs):
+#   P *->* B    = mutual TLS (both authenticated)
+#
+# idp is lowercase = honest trusted constant
 
 Types:
-  Agent A, B, P, IdP;
-  Function pk, photos, pwd;
+  Agent A, B, P, idp;
+  Function pk, photos, pw;
 
 Knowledge:
-  # A: Only needs password (no public keys needed - uses TLS channels)
-  A: A, B, P, IdP, pwd(A);
-  # B: Server with key pair, stores photos
-  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
-  # P: Server with key pair  
-  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
-  # IdP: Server with key pair, knows password
-  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+  A: A, B, P, idp, pw(A,idp), f1, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(idp), inv(pk(B)), photos(A), f1, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), f1, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, f4;
 
 Actions:
-  # Step 1: A connects to IdP over TLS (server-side auth)
-  # TLS provides: confidentiality + server authentication
-  # Modeled as secure channel since A knows it's IdP and msg is encrypted
-  A *->* IdP: A, P, B, pwd(A)
-  
-  # Step 2: IdP sends signed token back over TLS
-  # Token MUST be signed so B can verify IdP's approval
-  # (Can't replace this signature with channels - B has no channel to IdP)
-  IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))
-  
-  # Step 3: A connects to P over TLS, forwards token
-  # A doesn't have keys, so only confidential channel to P
-  A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
-  
-  # Step 4: P connects to B over TLS, presents token
-  # P is a server, can establish mutual TLS with B
-  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
-  
-  # Step 5: B sends photos to P over TLS
-  # Confidential (encrypted) and authenticated (from B)
-  B *->* P: B, photos(A)
+  [A] *->* idp: f1, A, P, B, pw(A,idp)
+  idp *->* [A]: {f2, A, P, B}(inv(pk(idp)))
+  [A] *->* P: {f2, A, P, B}(inv(pk(idp)))
+  P *->* B: f3, P, {f2, A, P, B}(inv(pk(idp)))
+  B *->* P: f4, B, photos(A)
 
 Goals:
-  # B authenticates that IdP approved this authorization
-  B authenticates IdP on IdP, A, P, B
-  # Photos remain secret between B and P (A doesn't have them)
+  B authenticates idp on f2, A, P, B
   photos(A) secret between B, P
+  pw(A,idp) guessable secret between A, idp

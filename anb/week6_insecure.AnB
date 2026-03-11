@@ -1,32 +1,39 @@
 Protocol: PhotoAuthorization_v5_insecure
 
-# Week 6 - INSECURE version to demonstrate guessable password attack
-# 
-# This version sends password over INSECURE channel
-# Intruder can capture and perform offline guessing attack
+# Week 6 - INSECURE version: hash-based challenge-response
+#
+# Why pk-encryption is NOT a good insecure example:
+#   {pw(A,idp)}(pk(idp)) cannot be decrypted by the intruder,
+#   so the intruder cannot verify a password guess.
+#
+# Hash-based challenge-response IS vulnerable:
+#   idp sends nonce NB, A responds with h(pw(A,idp), NB).
+#   Intruder sees both NB and h(pw(A,idp), NB) on the wire,
+#   can guess passwords and verify offline by recomputing the hash.
+#
+# idp is lowercase = honest trusted constant
 
 Types:
-  Agent A, B, P, IdP;
-  Function pk, photos, pwd;
+  Agent A, B, P, idp;
+  Number NB;
+  Function pk, photos, pw, h;
 
 Knowledge:
-  A: A, B, P, IdP, pk(IdP), pwd(A);
-  B: A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A);
-  P: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P));
-  IdP: A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A);
+  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), h, f2, f3, f4;
+  B: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(B)), photos(A), h, f2, f3, f4;
+  P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), h, f2, f3, f4;
+  idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), h, f2, f3, f4;
 
 Actions:
-  # INSECURE: Password sent encrypted but intruder can see ciphertext
-  # With guessable password, intruder can try decrypting with guesses
-  A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
-  
-  IdP -> A: {IdP, A, P, B}(inv(pk(IdP)))
-  A -> P: {IdP, A, P, B}(inv(pk(IdP)))
-  P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
-  B *->* P: B, photos(A)
+  A -> idp: A, P, B
+  idp -> A: NB
+  A -> idp: h(pw(A,idp), NB)
+  idp -> A: {f2, A, P, B}(inv(pk(idp)))
+  A -> P: {f2, A, P, B}(inv(pk(idp)))
+  P -> B: {f3, P, {f2, A, P, B}(inv(pk(idp)))}(pk(B))
+  B -> P: {f4, B, photos(A)}(pk(P))
 
 Goals:
-  B authenticates IdP on IdP, A, P, B
+  B authenticates idp on f2, A, P, B
   photos(A) secret between B, P
-  # This should FAIL - password exposed to offline guessing
-  pwd(A) guessable secret between A, IdP
+  pw(A,idp) guessable secret between A, idp

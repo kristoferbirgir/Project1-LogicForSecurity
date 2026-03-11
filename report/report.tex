@@ -55,7 +55,8 @@
 \begin{abstract}
 We design and incrementally refine an open authorization protocol in which a user A delegates
 read-only access to a photo resource at server B to a photo book service P, using an honest identity
-provider IdP. The protocol is specified in AnB and analyzed using OFMC under the Dolev--Yao attacker
+provider \texttt{idp} (modeled as a lowercase constant to prevent the intruder from impersonating it).
+The protocol is specified in AnB and analyzed using OFMC under the Dolev--Yao attacker
 model. This report documents the development process, discovered attacks, design iterations, and the
 final protocol, including weekly special tasks.
 \end{abstract}
@@ -84,7 +85,7 @@ author. Any section without a single designated author may be counted as not sub
   \item Course slides and lecture notes (weeks 2--7).
   \item OFMC / AnB documentation and examples from the course material.
   \item AVISPA project documentation for AnB syntax reference.
-  \item AI tools: GitHub Copilot used for protocol development iteration and documentation.
+  \item AI tools: GitHub Copilot, Claude (Anthropic), and ChatGPT (OpenAI) used for protocol development iteration and documentation.
   \item Group discussions between team members.
 \end{itemize}
 
@@ -97,23 +98,28 @@ A stores holiday photos at server B. A wants to create a photo book using servic
 authorize P to access a subset of A's photos at B without downloading and re-uploading them.
 A authenticates using an identity provider IdP via a shared password. The password is considered
 guessable and must not be used as an encryption key. All parties except A have public/private keys.
-All parties know IdP's public key, and IdP knows all public keys. IdP is assumed honest and trusted.
+A authenticates using an identity provider \texttt{idp} via a shared password \texttt{pw(A,idp)}.
+The password is considered guessable and must not be used as an encryption key.
+All parties except A have public/private keys.
+All parties know \texttt{idp}'s public key, and \texttt{idp} knows all public keys.
+In the AnB model, \texttt{idp} is written in lowercase to declare it as an honest constant---the
+intruder cannot instantiate this role.
 
 \subsection{Agents}
 \begin{itemize}[leftmargin=*]
   \item \textbf{A (User):} Owns photos, authenticates via password, no cryptographic keys.
   \item \textbf{B (Photo Server):} Stores A's photos, has key pair \texttt{pk(B)/inv(pk(B))}.
   \item \textbf{P (Printing Service):} Wants to access A's photos, has key pair \texttt{pk(P)/inv(pk(P))}.
-  \item \textbf{IdP (Identity Provider):} Authenticates A, issues authorization tokens, has key pair \texttt{pk(IdP)/inv(pk(IdP))}.
+  \item \textbf{idp (Identity Provider):} Authenticates A, issues authorization tokens, has key pair \texttt{pk(idp)/inv(pk(idp))}. Modeled as a lowercase constant (honest, trusted).
 \end{itemize}
 
 \subsection{Security and Functional Goals}
 We target the following goals:
 \begin{itemize}[leftmargin=*]
-  \item \textbf{Authorization:} B should only release photos if authorized by A via IdP.
-  \item \textbf{Password secrecy:} A's password must not be revealed to P, B, or the intruder.
-  \item \textbf{Photo confidentiality:} Photos should remain secret between authorized parties.
-  \item \textbf{Authentication:} B must be able to verify IdP signed the authorization token.
+  \item \textbf{Authorization:} B should only release photos if authorized by A via \texttt{idp}.
+  \item \textbf{Password secrecy:} A's password \texttt{pw(A,idp)} must not be revealed to P, B, or the intruder.
+  \item \textbf{Photo confidentiality:} Photos should remain secret between B and P.
+  \item \textbf{Authentication:} B must be able to verify \texttt{idp} signed the authorization token.
 \end{itemize}
 
 % ------------------------------------------------
@@ -123,123 +129,147 @@ We target the following goals:
 \subsection{Informal Outline}
 The basic protocol flow:
 \begin{enumerate}
-  \item A requests authorization from IdP (encrypted with IdP's public key)
-  \item IdP creates signed token authorizing P to access A's photos at B
+  \item A requests authorization from \texttt{idp} (encrypted with \texttt{idp}'s public key)
+  \item \texttt{idp} creates signed token authorizing P to access A's photos at B
   \item A forwards token to P
   \item P presents token to B (encrypted with B's public key)
-  \item B verifies token and sends photos to P
+  \item B verifies token and sends photos to P (encrypted with P's public key)
 \end{enumerate}
 
 \subsection{First AnB Model (Simplified)}
 Initial simplification: A has a key pair (temporary, removed in Week 3).
+\texttt{idp} is lowercase---an honest constant that the intruder cannot instantiate.
 
-\begin{lstlisting}[style=anb,caption={Week 2 protocol excerpt}]
+\begin{lstlisting}[style=anb,caption={Week 2 protocol}]
 Actions:
-  A -> IdP: {A, P, B}(pk(IdP))
-  IdP -> A: {A, P, B}(inv(pk(IdP)))
-  A -> P: {A, P, B}(inv(pk(IdP)))
-  P -> B: {{A, P, B}(inv(pk(IdP)))}(pk(B))
+  A -> idp: {A, P, B}(pk(idp))
+  idp -> A: {A, P, B}(inv(pk(idp)))
+  A -> P: {A, P, B}(inv(pk(idp)))
+  P -> B: {{A, P, B}(inv(pk(idp)))}(pk(B))
   B -> P: {photos(A)}(pk(P))
 \end{lstlisting}
 
 \subsection{OFMC Result}
-OFMC found a \textbf{signature forgery attack}: the intruder creates a token signed with their own key, and B cannot distinguish \texttt{pk(IdP)} from \texttt{pk(i)}.
+OFMC found an attack on the secrecy goal: the intruder plays A's role, requests authorization
+for itself, and manipulates the token flow so that B sends photos encrypted to a key the intruder
+controls. This is possible because A, B, P are all uppercase variables in AnB, meaning the
+intruder can instantiate them.
+
+\textbf{Key insight:} Because \texttt{idp} is lowercase, the intruder \emph{cannot} forge
+\texttt{idp}'s signature. The attack is about role manipulation, not signature forgery.
 
 \subsection{Special Task: Static Analysis (Passive Intruder)}
 \textbf{Assumption:} Intruder only eavesdrops (passive), does not inject messages.
 
 \textbf{What intruder observes:}
 \begin{itemize}[leftmargin=*]
-  \item Message 1: \texttt{\{A, P, B\}(pk(IdP))} -- cannot decrypt (no \texttt{inv(pk(IdP))})
-  \item Message 2: \texttt{\{A, P, B\}(inv(pk(IdP)))} -- can verify signature, learns A, P, B
+  \item Message 1: \texttt{\{A, P, B\}(pk(idp))} -- cannot decrypt (no \texttt{inv(pk(idp))})
+  \item Message 2: \texttt{\{A, P, B\}(inv(pk(idp)))} -- can verify signature, learns A, P, B
   \item Message 3: Same signed token -- learns nothing new
   \item Message 4: \texttt{\{\{token\}\}(pk(B))} -- cannot decrypt outer layer
   \item Message 5: \texttt{\{photos(A)\}(pk(P))} -- cannot decrypt
 \end{itemize}
 
-\textbf{Intruder's knowledge (passive):} Agent identities A, P, B, IdP (from signed token). \textbf{Cannot learn:} photos, password, or private keys.
+\textbf{Intruder's knowledge (passive):} Agent identities A, P, B (from signed token). \textbf{Cannot learn:} photos, password, or private keys.
 
-\textbf{Conclusion:} Protocol is secure against passive eavesdropping. The signature forgery attack requires active message injection.
+\textbf{Conclusion:} Protocol is secure against passive eavesdropping. The active attacks require message injection and role manipulation.
 
 % ------------------------------------------------
 \section{Week 3: Identity Provider and Lazy Intruder Executability}
 \sectionauthor{Mikael Máni Eyfeld Clarke}
 
 \subsection{Protocol Refinement}
-\textbf{Key change:} A no longer has a key pair. A authenticates to IdP using password.
+\textbf{Key change:} A no longer has a key pair. A authenticates to \texttt{idp} using
+shared password \texttt{pw(A,idp)}.
 
 \begin{lstlisting}[style=anb,caption={Week 3: Password authentication}]
-A -> IdP: {A, P, B, pwd(A)}(pk(IdP))
+A -> idp: {A, P, B, pw(A,idp)}(pk(idp))
 \end{lstlisting}
 
-The password is encrypted under IdP's public key, so the intruder cannot learn it. Password is NOT used as an encryption key -- only as a credential.
+The password is encrypted under \texttt{idp}'s public key, so the intruder cannot learn it.
+Password is NOT used as an encryption key---only as a credential.
 
 \subsection{Special Task: Lazy Intruder Method (P Executable by Intruder)}
-We show role P is executable by constructing all outgoing messages from intruder's knowledge.
+We show role P is executable by the intruder using constraint solving (lazy intruder).
 
-\textbf{Role P receives and sends:}
-\begin{enumerate}
-  \item Receives: \texttt{token = \{IdP, A, P, B\}(inv(pk(IdP)))}
-  \item Sends: \texttt{\{P, token\}(pk(B))}
-\end{enumerate}
-
-\textbf{Lazy Intruder Analysis:}
+\textbf{Role P's messages:}
 \begin{itemize}[leftmargin=*]
-  \item \textbf{Step 1:} Intruder intercepts message 3 (A $\to$ P), learns \texttt{token}
-  \item \textbf{Step 2:} Intruder knows \texttt{P} (public agent name)
-  \item \textbf{Step 3:} Intruder knows \texttt{pk(B)} (public key, in initial knowledge)
-  \item \textbf{Step 4:} Intruder computes \texttt{\{P, token\}(pk(B))} using encryption rule
+  \item Receives from A: \texttt{token = \{A, P, B\}(inv(pk(idp)))}
+  \item Sends to B: \texttt{\{\{A, P, B\}(inv(pk(idp)))\}(pk(B))}
 \end{itemize}
 
-\textbf{Conclusion:} Role P is executable by the intruder. Every message P sends can be constructed from publicly available information and intercepted messages. This is expected -- P acts as a relay.
+\textbf{Constraint solving (lecture style):}
+
+\noindent Initial intruder knowledge $\mathit{IK}_0$: all public names, \texttt{pk(B)}, \texttt{pk(P)}, \texttt{pk(idp)}, agent names.
+
+\noindent After intercepting message 3 (A $\to$ P):
+\[
+\mathit{IK}_1 = \mathit{IK}_0 \cup \{\texttt{\{A, P, B\}(inv(pk(idp)))}\}
+\]
+
+\noindent The intruder must compose:
+\texttt{\{\{A, P, B\}(inv(pk(idp)))\}(pk(B))}
+
+\noindent Resolution steps:
+\begin{enumerate}
+  \item \textbf{Axiom:} \texttt{\{A, P, B\}(inv(pk(idp)))} $\in \mathit{IK}_1$ \quad (intercepted token)
+  \item \textbf{Axiom:} \texttt{pk(B)} $\in \mathit{IK}_0$ \quad (public key)
+  \item \textbf{Compose (encryption):} From steps 1--2, compose
+        \texttt{\{\{A, P, B\}(inv(pk(idp)))\}(pk(B))}
+\end{enumerate}
+
+\textbf{Conclusion:} Role P is executable by the intruder. All outgoing messages can be
+constructed from the intruder's knowledge via Axiom and Compose rules.
 
 % ------------------------------------------------
 \section{Week 4: Typing, Formats, and Public-Key Lookup}
 \sectionauthor{Kristófer Birgir Hjörleifsson}
 
-\subsection{Type-Flaw Resistance via Formats}
-Type flaws occur when an intruder substitutes a message of one type where another is expected. We prevent this by:
-\begin{itemize}[leftmargin=*]
-  \item Including agent identities in messages as implicit format tags
-  \item Using different tuple structures for different message types
-\end{itemize}
+\subsection{Type-Flaw Resistance via Format Tags}
+Type flaws occur when an intruder substitutes a message of one type where another is expected.
+We prevent this by adding constant format tags (\texttt{f1}--\texttt{f4}) as the first element of
+each message tuple, making every message structurally unique:
 
-\begin{lstlisting}[style=anb,caption={Message formats}]
-Msg 1: {A, P, B, pwd(A)}(pk(IdP))       % 4-tuple with password
-Msg 2: {IdP, A, P, B}(inv(pk(IdP)))     % 4-tuple, agents only
-Msg 4: {P, {token}(inv(pk(IdP)))}(pk(B)) % Nested structure
-Msg 5: {B, photos(A)}(pk(P))            % 2-tuple
+\begin{lstlisting}[style=anb,caption={Week 4: Format-tagged messages}]
+Msg 1: {f1, A, P, B, pw(A,idp)}(pk(idp))      % Auth request
+Msg 2: {f2, A, P, B}(inv(pk(idp)))            % Token
+Msg 4: {f3, P, {f2, A, P, B}(inv(pk(idp)))}(pk(B))  % Photo request
+Msg 5: {f4, B, photos(A)}(pk(P))              % Photo response
 \end{lstlisting}
 
+The tag \texttt{f1} marks auth requests, \texttt{f2} marks tokens, etc. Since each message
+begins with a distinct constant, no two different message types can be unified.
+
 \subsection{Public-Key Lookup Subprotocol}
-A separate protocol allows A to obtain public keys from IdP:
+A separate protocol allows A to obtain public keys from \texttt{idp}:
 
 \begin{lstlisting}[style=anb,caption={Key lookup protocol}]
-A -> IdP: {A, B, pwd(A)}(pk(IdP))
-IdP -> A: {B, pk(B)}(inv(pk(IdP)))
+A -> idp: {f5, A, B, pw(A,idp)}(pk(idp))
+idp -> A: {f5, B, pk(B)}(inv(pk(idp)))
 \end{lstlisting}
 
 \subsection{Special Task: Type-Flaw Resistance Proof}
-\textbf{Definition:} Protocol is type-flaw resistant if for any two non-variable messages $M_1$, $M_2$ in SMP, if they have a unifier $\sigma$, then $\text{type}(M_1) = \text{type}(M_2)$.
+\textbf{Definition:} A protocol is type-flaw resistant if for any two non-variable messages $M_1$, $M_2$ in the set of sub-messages of the protocol (SMP), if they have a unifier $\sigma$, then
+$\text{type}(M_1) = \text{type}(M_2)$.
 
 \textbf{Analysis of message types:}
 \begin{center}
 \begin{tabular}{lll}
 \toprule
-Message & Structure & Type \\
+Message & Leading tag & Arity \\
 \midrule
-Msg 1 & (Agent, Agent, Agent, Function) & AuthRequest \\
-Msg 2 & (Agent, Agent, Agent, Agent) & Token \\
-Msg 4 outer & (Agent, SignedMsg) & PhotoRequest \\
-Msg 5 & (Agent, Function) & PhotoResponse \\
+Msg 1 & f1 & 5 (f1, Agent, Agent, Agent, Password) \\
+Msg 2 & f2 & 4 (f2, Agent, Agent, Agent) \\
+Msg 4 outer & f3 & 3 (f3, Agent, SignedToken) \\
+Msg 5 & f4 & 3 (f4, Agent, Data) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \textbf{Unification check:}
 \begin{itemize}[leftmargin=*]
-  \item Msg 1 vs Msg 2: Different types (\texttt{pwd(A)} $\neq$ Agent) -- no unifier
-  \item Msg 4 vs Msg 5: Different types (SignedMsg $\neq$ Function) -- no unifier
+  \item No two messages share the same leading tag, so no unifier exists between different message types.
+  \item Even ignoring tags: Msg 1 has 5 components, Msg 2 has 4, etc.---different arities prevent unification.
 \end{itemize}
 
 \textbf{Conclusion:} Protocol is type-flaw resistant.
@@ -255,21 +285,27 @@ Msg 5 & (Agent, Function) & PhotoResponse \\
 Notation & Meaning \\
 \midrule
 \texttt{A -> B: M} & Insecure (Dolev-Yao) \\
-\texttt{A *-> B: M} & Confidential only (TLS, client not auth) \\
-\texttt{A ->* B: M} & Authenticated only (signed) \\
+\texttt{A *-> B: M} & Confidential only \\
+\texttt{A ->* B: M} & Authenticated only \\
 \texttt{A *->* B: M} & Secure channel (mutual TLS) \\
+\texttt{[A] *->* B: M} & A pseudonymous, B authenticated (TLS server-auth) \\
+\texttt{B *->* [A]: M} & Reply to pseudonymous A \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{Channel Variant}
-\begin{lstlisting}[style=anb,caption={Week 5: TLS channels}]
-A *->* IdP: A, P, B, pwd(A)           % TLS to IdP
-IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))  % Signed token
-A *-> P: {token}(inv(pk(IdP)))        % Forward token
-P *->* B: P, {token}(inv(pk(IdP)))    % Present to B
-B *->* P: B, photos(A)                % Response
+\subsection{Pseudonymous Channel Variant}
+\begin{lstlisting}[style=anb,caption={Week 5: Pseudonymous TLS channels}]
+[A] *->* idp: f1, A, P, B, pw(A,idp)
+idp *->* [A]: {f2, A, P, B}(inv(pk(idp)))
+[A] *->* P: {f2, A, P, B}(inv(pk(idp)))
+P *->* B: f3, P, {f2, A, P, B}(inv(pk(idp)))
+B *->* P: f4, B, photos(A)
 \end{lstlisting}
+
+The \texttt{[A]} notation means A is \emph{pseudonymous}: the server authenticates itself (has
+a certificate) but does not know the client's identity. This models TLS with server-side
+authentication only. A authenticates at the application level via \texttt{pw(A,idp)}.
 
 \subsection{Special Task: What Was Replaced}
 \begin{center}
@@ -277,49 +313,65 @@ B *->* P: B, photos(A)                % Response
 \toprule
 Original & Channel Version & Replaced? \\
 \midrule
-\texttt{\{M\}(pk(IdP))} & \texttt{A *-> IdP: M} & Yes \\
-\texttt{\{M\}(pk(B))} & \texttt{P *-> B: M} & Yes \\
-\texttt{\{M\}(pk(P))} & \texttt{B *-> P: M} & Yes \\
-\texttt{\{M\}(inv(pk(IdP)))} & Cannot replace & \textbf{No} \\
+\texttt{\{M\}(pk(idp))} & \texttt{[A] *->* idp: M} & Yes \\
+\texttt{\{M\}(pk(B))} & \texttt{P *->* B: M} & Yes \\
+\texttt{\{M\}(pk(P))} & \texttt{B *->* P: M} & Yes \\
+\texttt{\{M\}(inv(pk(idp)))} & Cannot replace & \textbf{No} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{Why signature cannot be replaced:} B needs to verify IdP approved the authorization, but B has no direct TLS channel to IdP. The token travels through A and P, so B must verify the signature cryptographically.
+\textbf{Why the signature cannot be replaced:} B needs to verify \texttt{idp}'s approval, but B
+has no direct TLS channel to \texttt{idp}. The token travels through A and P, so B must verify
+the signature cryptographically.
 
 % ------------------------------------------------
 \section{Week 6: Privacy and Guessable Password}
 \sectionauthor{Kristófer Birgir Hjörleifsson}
 
 \subsection{Guessable Secrets}
-A guessable secret (like a password) can be subject to offline dictionary attacks. The intruder captures encrypted data containing the password and tries decrypting with guessed passwords.
+A guessable secret (like a password) can be subject to offline dictionary attacks. The intruder
+captures data containing or derived from the password and tries verifying guesses offline.
 
 \subsection{Security with Guessable Password}
 Our protocol protects against guessing attacks because:
 \begin{itemize}[leftmargin=*]
-  \item Password is sent over secure channel (\texttt{A *->* IdP})
-  \item Intruder never sees ciphertext containing password
+  \item Password is sent over a pseudonymous secure channel (\texttt{[A] *->* idp})
+  \item Intruder never sees any derivation of the password on the wire
   \item No offline verification possible
 \end{itemize}
 
-\textbf{OFMC Goal:} \texttt{pwd(A) guessable secret between A, IdP}
+\textbf{OFMC Goal:} \texttt{pw(A,idp) guessable secret between A, idp}
 
-\textbf{Result:} No guessing attack found (only signature forgery under dishonest IdP).
+\textbf{Result:} No guessing attack found. The only attack is on photo secrecy (intruder plays A),
+not on the password.
 
 \subsection{Special Task: Insecure Variant Demonstration}
-We created an insecure variant to demonstrate the attack:
+We created an insecure variant using hash-based challenge-response over an insecure channel.
+This is a proper example of offline guessing vulnerability (unlike public-key encryption,
+which does \emph{not} allow the intruder to verify guesses):
 
-\begin{lstlisting}[style=anb,caption={Insecure version (vulnerable to guessing)}]
-A -> IdP: {A, P, B, pwd(A)}(pk(IdP))   % Regular encryption
+\begin{lstlisting}[style=anb,caption={Insecure version: hash-based challenge-response}]
+A -> idp: A, P, B
+idp -> A: NB
+A -> idp: h(pw(A,idp), NB)
 \end{lstlisting}
+
+The intruder observes \texttt{NB} and \texttt{h(pw(A,idp), NB)} on the wire and can
+verify password guesses by recomputing the hash.
 
 \textbf{OFMC Result:} \texttt{ATTACK\_FOUND (guesswhat)}
 \begin{lstlisting}[style=terminal,caption={Guessing attack trace}]
-(A,1) -> i: {A,P,B,pwd(A)}_(pk(IdP))
-i can produce secret {A,P,B,guessPW}_(pk(IdP))
+(A,1) -> i: A, P, B
+i -> (A,1): NB
+(A,1) -> i: h(pw(A,idp), NB)
+i can produce secret h(guessPW, NB)
 \end{lstlisting}
 
-\textbf{Conclusion:} Encryption alone does not protect guessable secrets. Secure channels (TLS) prevent offline guessing by hiding the ciphertext entirely.
+\textbf{Conclusion:} Public-key encryption (\texttt{\{pw\}(pk(idp))}) does \emph{not} allow
+offline guessing because the intruder cannot decrypt without \texttt{inv(pk(idp))}.
+Hash-based challenge-response \emph{does} allow it because the intruder can recompute
+\texttt{h(guess, NB)} and compare. Secure channels prevent both.
 
 % ------------------------------------------------
 \section{Final Protocol (AnB Specification Summary)}
@@ -327,20 +379,20 @@ i can produce secret {A,P,B,guessPW}_(pk(IdP))
 
 \subsection{Final Message Flow}
 \begin{lstlisting}[style=anb,caption={Final protocol (photo\_auth\_final.AnB)}]
-A *->* IdP: A, P, B, pwd(A)
-IdP *->* A: {IdP, A, P, B}(inv(pk(IdP)))
-A *-> P: {IdP, A, P, B}(inv(pk(IdP)))
-P *->* B: P, {IdP, A, P, B}(inv(pk(IdP)))
-B *->* P: B, photos(A)
+[A] *->* idp: f1, A, P, B, pw(A,idp)
+idp *->* [A]: {f2, A, P, B}(inv(pk(idp)))
+[A] *->* P: {f2, A, P, B}(inv(pk(idp)))
+P *->* B: f3, P, {f2, A, P, B}(inv(pk(idp)))
+B *->* P: f4, B, photos(A)
 \end{lstlisting}
 
 \textbf{Step-by-step:}
 \begin{enumerate}
-  \item A authenticates to IdP with password over TLS
-  \item IdP creates signed authorization token
-  \item A forwards token to P over confidential channel
-  \item P presents token to B with mutual TLS
-  \item B verifies token signature and sends photos to P
+  \item A authenticates to \texttt{idp} with password over pseudonymous TLS
+  \item \texttt{idp} creates signed authorization token (format tag \texttt{f2})
+  \item A forwards token to P over pseudonymous TLS
+  \item P presents token to B with mutual TLS (format tag \texttt{f3})
+  \item B verifies token signature and sends photos to P (format tag \texttt{f4})
 \end{enumerate}
 
 \subsection{Initial Knowledge}
@@ -349,27 +401,34 @@ B *->* P: B, photos(A)
 \toprule
 Agent & Knowledge \\
 \midrule
-A & A, B, P, IdP, pwd(A) \\
-B & A, B, P, IdP, pk(B), pk(IdP), inv(pk(B)), photos(A) \\
-P & A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(P)) \\
-IdP & A, B, P, IdP, pk(B), pk(P), pk(IdP), inv(pk(IdP)), pwd(A) \\
+A & A, B, P, idp, pw(A,idp), f1, f2, f3, f4 \\
+B & A, B, P, idp, pk(B), pk(idp), inv(pk(B)), photos(A), f1, f2, f3, f4 \\
+P & A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P)), f1, f2, f3, f4 \\
+idp & A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, f4 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \subsection{Goals}
 \begin{itemize}[leftmargin=*]
-  \item \texttt{B authenticates IdP on IdP, A, P, B} -- B verifies IdP signed token
+  \item \texttt{B authenticates idp on f2, A, P, B} -- B verifies \texttt{idp} signed the token
   \item \texttt{photos(A) secret between B, P} -- Photos only known to B and P
-  \item \texttt{pwd(A) guessable secret between A, IdP} -- Password protected
+  \item \texttt{pw(A,idp) guessable secret between A, idp} -- Password protected
 \end{itemize}
 
 \subsection{Verification Results}
-\textbf{OFMC Result:} ATTACK\_FOUND (signature forgery)
+\textbf{OFMC Result:} ATTACK\_FOUND (secrets)
 
-The attack involves the intruder acting as IdP, signing a forged token with their own key. This attack is \textbf{excluded by assumption} since IdP is assumed honest.
+The attack involves the intruder playing A's role (since A is an uppercase variable).
+The intruder uses its own password \texttt{pw(i,idp)} to get a legitimate token from \texttt{idp}
+and manipulates the protocol flow so that B sends \texttt{photos(i)} to a destination the intruder
+controls.
 
-\textbf{Under honest IdP assumption:} Protocol is secure.
+\textbf{Important:} This is \emph{not} a signature forgery. With \texttt{idp} as a lowercase
+constant, the intruder cannot forge \texttt{idp}'s signature. The attack exploits the fact that
+A, B, P are variables the intruder can instantiate.
+
+\textbf{Password security:} No guessing attack was found---the password goal passes.
 
 % ------------------------------------------------
 \section{Assumptions, Simplifications, and Limitations}
@@ -377,9 +436,12 @@ The attack involves the intruder acting as IdP, signing a forged token with thei
 
 \subsection{Assumptions}
 \begin{itemize}[leftmargin=*]
-  \item \textbf{IdP is honest:} The identity provider never acts maliciously or is compromised. Attacks involving dishonest IdP are excluded.
-  \item \textbf{Secure channels abstract TLS:} We assume TLS provides confidentiality and authentication as modeled.
-  \item \textbf{Keys are pre-distributed:} Servers know each other's public keys.
+  \item \textbf{idp is honest:} Modeled as a lowercase constant in AnB. The intruder cannot
+        instantiate the \texttt{idp} role.
+  \item \textbf{Secure channels abstract TLS:} We assume TLS provides confidentiality and
+        authentication as modeled by the channel notation.
+  \item \textbf{Keys are pre-distributed:} Servers know each other's public keys (or obtain
+        them via the key lookup subprotocol).
 \end{itemize}
 
 \subsection{Simplifications}
@@ -387,32 +449,43 @@ The attack involves the intruder acting as IdP, signing a forged token with thei
   \item \textbf{Photos as abstract secret:} Modeled as \texttt{photos(A)} rather than actual data.
   \item \textbf{No scope/folder:} Token authorizes access to all photos, not a specific subset.
   \item \textbf{No timestamps/nonces:} Token has no expiration or freshness mechanism.
-  \item \textbf{Single session:} OFMC verifies bounded number of sessions.
+  \item \textbf{Single session:} OFMC verifies a bounded number of sessions.
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}[leftmargin=*]
-  \item \textbf{Signature forgery persists:} B cannot distinguish pk(IdP) from pk(i) without out-of-band trust establishment.
+  \item \textbf{Intruder can play A:} Since A, B, P are uppercase variables, the intruder can
+        instantiate any of these roles. This leads to the photo secrecy attack where the
+        intruder requests its own photos.
   \item \textbf{No revocation:} Once issued, tokens cannot be revoked.
-  \item \textbf{IdP single point of failure:} If IdP is compromised, all security fails.
+  \item \textbf{idp single point of failure:} If \texttt{idp} were compromised (not modeled),
+        all security guarantees fail.
 \end{itemize}
 
 % ------------------------------------------------
 \section{Conclusion}
 \sectionauthor{Mikael Máni Eyfeld Clarke}
 
-We designed an open authorization protocol allowing user A to authorize printing service P to access photos at server B, using identity provider IdP for authentication.
+We designed an open authorization protocol allowing user A to authorize printing service P to access
+photos at server B, using identity provider \texttt{idp} for authentication.
 
-\textbf{Main attack encountered:} Signature forgery -- the intruder creates tokens signed with their own key. This is a fundamental Dolev-Yao limitation where B cannot distinguish honest from dishonest signers without pre-established trust.
-
-\textbf{Solution:} We assume IdP is honest (as per assignment). Under this assumption, the protocol provides:
+\textbf{Key design decisions:}
 \begin{itemize}[leftmargin=*]
-  \item Authentication of IdP's authorization via signed tokens
-  \item Confidentiality of photos (only B and P)
-  \item Protection of guessable password via secure channels
+  \item \texttt{idp} as lowercase constant prevents the intruder from impersonating the identity provider
+  \item Format tags (\texttt{f1}--\texttt{f4}) prevent type-flaw attacks
+  \item Pseudonymous channels (\texttt{[A] *->*}) model TLS with server-side authentication
+  \item Hash-based challenge-response is vulnerable to offline guessing; secure channels are not
 \end{itemize}
 
-\textbf{Final protocol uses:} TLS channels for confidentiality, cryptographic signatures for authorization tokens that travel through untrusted intermediaries.
+\textbf{Remaining attack:} The intruder can play A's role (uppercase variable) and get its own
+photos leaked. This is inherent to the protocol model where A is not pre-authenticated.
+
+\textbf{Final protocol provides:}
+\begin{itemize}[leftmargin=*]
+  \item Authentication of \texttt{idp}'s authorization via signed tokens
+  \item Confidentiality of photos between B and P
+  \item Protection of guessable password via pseudonymous TLS channels
+\end{itemize}
 
 % ------------------------------------------------
 \appendix
