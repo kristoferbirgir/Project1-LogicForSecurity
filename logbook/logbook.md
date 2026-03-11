@@ -67,7 +67,7 @@ Types:
   Function pk, photos;
 
 Knowledge:
-  A: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(A));
+  A: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(A)), photos(A);
   B: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(B)), photos(A);
   P: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(P));
   idp: A, B, P, idp, pk(A), pk(B), pk(P), pk(idp), inv(pk(idp));
@@ -81,7 +81,7 @@ Actions:
 
 Goals:
   B authenticates idp on A, P, B
-  photos(A) secret between B, P
+  photos(A) secret between A, B, P
 ```
 
 ---
@@ -149,7 +149,7 @@ Types:
   Function pk, photos, pw;
 
 Knowledge:
-  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp);
+  A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), photos(A);
   B: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(B)), photos(A);
   P: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(P));
   idp: A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp);
@@ -163,7 +163,7 @@ Actions:
 
 Goals:
   B authenticates idp on A, P, B
-  photos(A) secret between B, P
+  photos(A) secret between A, B, P
 ```
 
 ---
@@ -233,19 +233,14 @@ be forwarded with encryption in step 4.
 
 **Completed:**
 - [x] Protocol with password authentication (week3_v1.AnB)
-- [x] A has no key pair, uses password with IdP
-- [x] OFMC verification (signature attack still present)
+- [x] A has no key pair, uses password with idp
+- [x] OFMC verification (secrets attack — intruder plays A)
 - [x] Lazy intruder special task (P role is executable)
 
 **Key findings:**
-1. Password authentication added but doesn't fix signature forgery
-2. Role P is trivially executable - just forward the token
+1. Password authentication added but doesn't prevent role manipulation
+2. Role P is trivially executable — forward the token and decrypt photos
 3. Token is not bound to specific recipient P
-
-**Problems remaining:**
-- Signature forgery attack (B accepts any signature)
-- No freshness/nonces
-- Token not bound to P
 
 **Next steps for Week 4:**
 - Add formats for type-flaw resistance
@@ -275,7 +270,7 @@ Protocol: KeyLookup
 
 Types:
   Agent A, B, idp;
-  Function pk, pw;
+  Function pk, pw, f5;
 
 Knowledge:
   A: A, B, idp, pk(idp), pw(A,idp), f5;
@@ -283,15 +278,15 @@ Knowledge:
 
 Actions:
   A -> idp: {f5, A, B, pw(A,idp)}(pk(idp))
-  idp -> A: {f5, B, pk(B)}(inv(pk(idp)))
+  idp -> A: {f5, A, B, pk(B)}(inv(pk(idp)))
 
 Goals:
-  A authenticates idp on f5, B, pk(B)
+  A authenticates idp on f5, A, B, pk(B)
 ```
 
-**OFMC Result:** ATTACK FOUND (weak_auth)
-- The response `{f5, B, pk(B)}(inv(pk(idp)))` does not bind to the requester A, so the intruder can replay it to a different session.
-- Under honest idp assumption, protocol is acceptable for our purposes.
+**OFMC Result:** ATTACK FOUND (strong_auth)
+- This is a replay attack: the intruder replays a single response from idp to two sessions of A. Binding the response to A prevents the broader unbounded-replay issue, but a session-level replay is still possible without nonces.
+- Under our threat model, this is acceptable for the key-lookup subprotocol.
 
 ---
 
@@ -303,7 +298,7 @@ Protocol: PhotoAuthorization_v3
 
 Types:
   Agent A, B, P, idp;
-  Function pk, photos, pw;
+  Function pk, photos, pw, f1, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), f1, f2, f3, f4;
@@ -456,7 +451,7 @@ Protocol: PhotoAuthorization_v4
 
 Types:
   Agent A, B, P, idp;
-  Function pk, photos, pw;
+  Function pk, photos, pw, f1, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pw(A,idp), f1, f2, f3, f4;
@@ -495,7 +490,7 @@ Protocol: PhotoAuthorization_v4_crypto
 
 Types:
   Agent A, B, P, idp;
-  Function pk, photos, pw;
+  Function pk, photos, pw, f1, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), f1, f2, f3, f4;
@@ -595,7 +590,7 @@ Protocol: PhotoAuthorization_v5
 
 Types:
   Agent A, B, P, idp;
-  Function pk, photos, pw;
+  Function pk, photos, pw, f1, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pw(A,idp), f1, f2, f3, f4;
@@ -642,7 +637,7 @@ Protocol: PhotoAuthorization_v5_insecure
 Types:
   Agent A, B, P, idp;
   Number NB;
-  Function pk, photos, pw, h;
+  Function pk, photos, pw, h, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), h, f2, f3, f4;
@@ -704,3 +699,15 @@ can verify password guesses offline by recomputing the hash with the observed no
 2. Pseudonymous channels prevent guessing — no password-derived material on the wire
 3. pk-encryption of password does NOT enable guessing (intruder cannot decrypt)
 4. Our final protocol protects passwords because A→idp uses `[A] *->* idp`
+
+---
+
+## Final Protocol
+
+The final protocol (`anb/final/photo_auth_final.AnB`) is the Week 6 secure version
+(`week6_v1.AnB`). No further changes were needed after Week 6 — the pseudonymous
+channel design with format tags and guessable-password protection represents our
+complete solution.
+
+The key lookup subprotocol (`anb/final/key_lookup.AnB`) is analyzed separately and
+uses format tag f5 to avoid confusion with the main protocol's f1–f4 tags.

@@ -13,7 +13,7 @@ Protocol: PhotoAuthorization_v5
 
 Types:
   Agent A, B, P, idp;
-  Function pk, photos, pw;
+  Function pk, photos, pw, f1, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pw(A,idp), f1, f2, f3, f4;

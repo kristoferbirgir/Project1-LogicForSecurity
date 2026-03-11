@@ -16,7 +16,7 @@ Protocol: PhotoAuthorization_v5_insecure
 Types:
   Agent A, B, P, idp;
   Number NB;
-  Function pk, photos, pw, h;
+  Function pk, photos, pw, h, f2, f3, f4;
 
 Knowledge:
   A: A, B, P, idp, pk(B), pk(P), pk(idp), pw(A,idp), h, f2, f3, f4;

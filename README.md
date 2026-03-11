@@ -18,22 +18,31 @@ DTU — Spring 2026
 ---
 
 # Repository Structure
+
+```
 PROJECT1-LOGIC
 │
-├── anb
-│ ├── week2_v1.anb
-│ ├── week3_v1.anb
-│ ├── week4_v1.anb
-│ └── final_protocol.anb
+├── anb/
+│   ├── week2_v1.AnB          — Week 2: Barebones protocol
+│   ├── week3_v1.AnB          — Week 3: Password authentication
+│   ├── week4_v1.AnB          — Week 4: Format tags (type-flaw resistant)
+│   ├── week5_v1.AnB          — Week 5: Pseudonymous TLS channels
+│   ├── week5_v1_tls.AnB      — Week 5: Crypto comparison (no channels)
+│   ├── week6_v1.AnB          — Week 6: Guessable password (secure)
+│   ├── week6_insecure.AnB    — Week 6: Hash-based insecure variant
+│   └── final/
+│       ├── photo_auth_final.AnB  — Final protocol
+│       └── key_lookup.AnB        — Key lookup subprotocol
 │
-├── logbook
-│ └── logbook.md
+├── logbook/
+│   └── logbook.md
 │
-├── report
-│ └── report.tex
+├── report/
+│   └── report.tex
 │
 ├── .gitignore
 └── README.md
+```
 
 ### `anb/`
 Contains the protocol specifications written in **AnB** that are analyzed using OFMC.  
@@ -50,7 +59,7 @@ Contains the **LaTeX report** submitted for the assignment.
 # Running OFMC
 
 To verify a protocol version with OFMC:
-ofmc anb/week3_v1.anb
+ofmc anb/week5_v1.AnB
 
 OFMC will attempt to find attacks against the protocol under the Dolev–Yao attacker model.
 

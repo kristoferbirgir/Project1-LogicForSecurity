@@ -96,8 +96,6 @@ author. Any section without a single designated author may be counted as not sub
 \subsection{Scenario}
 A stores holiday photos at server B. A wants to create a photo book using service P and wishes to
 authorize P to access a subset of A's photos at B without downloading and re-uploading them.
-A authenticates using an identity provider IdP via a shared password. The password is considered
-guessable and must not be used as an encryption key. All parties except A have public/private keys.
 A authenticates using an identity provider \texttt{idp} via a shared password \texttt{pw(A,idp)}.
 The password is considered guessable and must not be used as an encryption key.
 All parties except A have public/private keys.
@@ -245,7 +243,7 @@ A separate protocol allows A to obtain public keys from \texttt{idp}:
 
 \begin{lstlisting}[style=anb,caption={Key lookup protocol}]
 A -> idp: {f5, A, B, pw(A,idp)}(pk(idp))
-idp -> A: {f5, B, pk(B)}(inv(pk(idp)))
+idp -> A: {f5, A, B, pk(B)}(inv(pk(idp)))
 \end{lstlisting}
 
 \subsection{Special Task: Type-Flaw Resistance Proof}
@@ -419,16 +417,18 @@ idp & A, B, P, idp, pk(B), pk(P), pk(idp), inv(pk(idp)), pw(A,idp), f1, f2, f3, 
 \subsection{Verification Results}
 \textbf{OFMC Result:} ATTACK\_FOUND (secrets)
 
-The attack involves the intruder playing A's role (since A is an uppercase variable).
-The intruder uses its own password \texttt{pw(i,idp)} to get a legitimate token from \texttt{idp}
-and manipulates the protocol flow so that B sends \texttt{photos(i)} to a destination the intruder
-controls.
+OFMC reports a secrecy violation because the intruder can instantiate the user role~A with itself
+(A is an uppercase variable). In that case, \texttt{idp} legitimately issues a token for the
+intruder's own identity, and the intruder eventually learns \texttt{photos(i)}---i.e.\ its own
+resource. This is not a meaningful break of the intended authorization property for honest users;
+it is a modeling artifact of variable role instantiation in the Dolev--Yao model.
 
-\textbf{Important:} This is \emph{not} a signature forgery. With \texttt{idp} as a lowercase
-constant, the intruder cannot forge \texttt{idp}'s signature. The attack exploits the fact that
-A, B, P are variables the intruder can instantiate.
+\textbf{Important:} With \texttt{idp} as a lowercase constant, the intruder cannot forge
+\texttt{idp}'s signature or impersonate the identity provider. The attack is purely about the
+intruder playing a legitimate user role.
 
-\textbf{Password security:} No guessing attack was found---the password goal passes.
+\textbf{Password security:} The guessable-password goal \texttt{pw(A,idp) guessable secret
+between A, idp} is \emph{not} violated---this is the important Week~6 privacy result.
 
 % ------------------------------------------------
 \section{Assumptions, Simplifications, and Limitations}
@@ -477,8 +477,10 @@ photos at server B, using identity provider \texttt{idp} for authentication.
   \item Hash-based challenge-response is vulnerable to offline guessing; secure channels are not
 \end{itemize}
 
-\textbf{Remaining attack:} The intruder can play A's role (uppercase variable) and get its own
-photos leaked. This is inherent to the protocol model where A is not pre-authenticated.
+\textbf{Remaining attack:} OFMC can instantiate A with the intruder, leading to
+\texttt{photos(i)} being leaked. This is not a meaningful break of honest-user authorization---the
+intruder merely obtains its own resource. The guessable-password goal holds, which is the key
+Week~6 privacy result.
 
 \textbf{Final protocol provides:}
 \begin{itemize}[leftmargin=*]
@@ -499,8 +501,8 @@ photos leaked. This is inherent to the protocol model where A is not pre-authent
       \item \texttt{anb/week2\_v1.AnB} -- Basic protocol
       \item \texttt{anb/week3\_v1.AnB} -- Password authentication
       \item \texttt{anb/week4\_v1.AnB} -- Type-flaw resistant
-      \item \texttt{anb/week5\_v1.AnB} -- TLS channels
-      \item \texttt{anb/week5\_v1\_tls.AnB} -- Server-side only TLS
+      \item \texttt{anb/week5\_v1.AnB} -- Pseudonymous TLS channels
+      \item \texttt{anb/week5\_v1\_tls.AnB} -- Crypto comparison (no channels)
       \item \texttt{anb/week6\_v1.AnB} -- Guessable password
       \item \texttt{anb/week6\_insecure.AnB} -- Insecure variant (demo)
     \end{itemize}

@@ -9,7 +9,6 @@ Protocol: PhotoAuthorization_v2
 
 Types:
   Agent A, B, P, idp;
-  Number Na;
   Function pk, photos, pw;
 
 Knowledge:

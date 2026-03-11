@@ -7,7 +7,7 @@ Protocol: KeyLookup
 
 Types:
   Agent A, B, idp;
-  Function pk, pw;
+  Function pk, pw, f5;
 
 Knowledge:
   A: A, B, idp, pk(idp), pw(A,idp), f5;
@@ -15,7 +15,7 @@ Knowledge:
 
 Actions:
   A -> idp: {f5, A, B, pw(A,idp)}(pk(idp))
-  idp -> A: {f5, B, pk(B)}(inv(pk(idp)))
+  idp -> A: {f5, A, B, pk(B)}(inv(pk(idp)))
 
 Goals:
-  A authenticates idp on f5, B, pk(B)
+  A authenticates idp on f5, A, B, pk(B)
