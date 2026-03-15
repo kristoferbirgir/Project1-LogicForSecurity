@@ -177,15 +177,33 @@ intruder can instantiate them.
 \sectionauthor{Mikael Máni Eyfeld Clarke}
 
 \subsection{Protocol Refinement}
-\textbf{Key change:} A no longer has a key pair. A authenticates to \texttt{idp} using
-shared password \texttt{pw(A,idp)}.
+\textbf{Key changes from Week~2:}
+\begin{itemize}[leftmargin=*]
+  \item A no longer has a public/private key pair.
+  \item A authenticates to \texttt{idp} using shared password \texttt{pw(A,idp)},
+        encrypted under \texttt{idp}'s public key (password is NOT used as an encryption key).
+  \item A's initial knowledge of \texttt{photos(A)} was removed---A never possesses the
+        photos in the protocol; they are sent directly from B to P.
+\end{itemize}
 
-\begin{lstlisting}[style=anb,caption={Week 3: Password authentication}]
-A -> idp: {A, P, B, pw(A,idp)}(pk(idp))
+\begin{lstlisting}[style=anb,caption={Week 3: Full protocol with password authentication}]
+Actions:
+  A -> idp: {A, P, B, pw(A,idp)}(pk(idp))
+  idp -> A: {A, P, B}(inv(pk(idp)))
+  A -> P: {A, P, B}(inv(pk(idp)))
+  P -> B: {{A, P, B}(inv(pk(idp)))}(pk(B))
+  B -> P: {photos(A)}(pk(P))
+
+Goals:
+  B authenticates idp on A, P, B
+  photos(A) secret between A, B, P
 \end{lstlisting}
 
-The password is encrypted under \texttt{idp}'s public key, so the intruder cannot learn it.
-Password is NOT used as an encryption key---only as a credential.
+\subsection{OFMC Verification}
+\textbf{Result:} ATTACK\_FOUND (secrets)---same pattern as Week~2. The intruder plays A's
+role (A is an uppercase variable), so \texttt{idp} legitimately issues a token. The password
+authentication between A and \texttt{idp} does not prevent this because the attack is about
+role instantiation, not credential forgery.
 
 \subsection{Special Task: Lazy Intruder Method (P Executable by Intruder)}
 We show role P is executable by the intruder using constraint solving (lazy intruder).
@@ -222,6 +240,16 @@ constructed from the intruder's knowledge via Axiom and Compose rules.
 % ------------------------------------------------
 \section{Week 4: Typing, Formats, and Public-Key Lookup}
 \sectionauthor{Kristófer Birgir Hjörleifsson}
+
+\subsection{Changes from Week 3}
+\textbf{Key changes:}
+\begin{itemize}[leftmargin=*]
+  \item Format tags \texttt{f1}--\texttt{f4} added for type-flaw resistance.
+  \item A no longer needs to initially know \texttt{pk(B)} and \texttt{pk(P)}.
+        Instead, a separate key lookup subprotocol lets A query \texttt{idp} for any
+        public key. In the main protocol, A only needs \texttt{pk(idp)}---the channels
+        in Week~5 will remove even that requirement.
+\end{itemize}
 
 \subsection{Type-Flaw Resistance via Format Tags}
 Type flaws occur when an intruder substitutes a message of one type where another is expected.
@@ -322,9 +350,15 @@ Original & Channel Version & Replaced? \\
 \end{tabular}
 \end{center}
 
-\textbf{Why the signature cannot be replaced:} B needs to verify \texttt{idp}'s approval, but B
-has no direct TLS channel to \texttt{idp}. The token travels through A and P, so B must verify
-the signature cryptographically.
+\textbf{Why the signature cannot be replaced:}
+The token \texttt{\{f2, A, P, B\}(inv(pk(idp)))} is created by \texttt{idp} in step~2 but is
+not consumed until step~4, when B receives it from P. B has no direct TLS session with
+\texttt{idp}---the token travels through two intermediaries (A and P). A TLS channel only
+protects data \emph{in transit between two endpoints}; it cannot provide a guarantee that
+survives forwarding. Therefore, B must verify \texttt{idp}'s cryptographic signature on the
+token to confirm that \texttt{idp} actually authorized the access. This is directly
+analogous to how OAuth~2.0 access tokens are signed JWTs verified by the resource server
+without contacting the authorization server.
 
 % ------------------------------------------------
 \section{Week 6: Privacy and Guessable Password}
@@ -432,6 +466,40 @@ intruder playing a legitimate user role.
 
 \textbf{Password security:} The guessable-password goal \texttt{pw(A,idp) guessable secret
 between A, idp} is \emph{not} violated---this is the important Week~6 privacy result.
+
+\subsection{Representative OFMC Output}
+Below is the (abbreviated) OFMC output for the final protocol, showing the role-manipulation
+attack:
+
+\begin{lstlisting}[style=terminal,caption={OFMC attack trace for final protocol}]
+% OFMC
+% Version of 2006/02/13
+SUMMARY
+  ATTACK_FOUND
+
+DETAILS
+  ATTACK_FOUND (secrets)
+
+PROTOCOL
+  photo_auth_final.AnB
+
+GOAL
+  secrecy_of_photos(A)
+
+BACKEND
+  OFMC
+
+COMMENTS
+ATTACK TRACE
+  (i,1)  *->* (idp,4): f1,i,i,i,pw(i,idp)
+  (idp,4) *->* (i,1):  {f2,i,i,i}(inv(pk(idp)))
+  (i,1)  *->* (i,3):   {f2,i,i,i}(inv(pk(idp)))
+  (i,3)  *->* (i,2):   f3,i,{f2,i,i,i}(inv(pk(idp)))
+  (i,2)  *->* (i,3):   f4,i,photos(i)
+\end{lstlisting}
+
+\noindent The intruder instantiates A, B, and P with itself (\texttt{i}), legitimately obtains a
+token from \texttt{idp}, and receives \texttt{photos(i)}---its own resource.
 
 % ------------------------------------------------
 \section{Assumptions, Simplifications, and Limitations}
